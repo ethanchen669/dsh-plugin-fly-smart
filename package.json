@@ -1,0 +1,38 @@
+{
+  "name": "dsh-plugin-fly-smart",
+  "version": "0.1.1",
+  "description": "Fly smart 工作流（agent 平面）：阶段机 + 工具面（smart_*），由 preset 按会话挂载；工作台面板是另一个包 dsh-plugin-fly-smart-panel。",
+  "type": "module",
+  "main": "index.js",
+  "files": [
+    "index.js",
+    "lib/state.mjs"
+  ],
+  "scripts": {
+    "verify": "node scripts/verify-smart.mjs",
+    "test": "node --test tests/*.spec.mjs",
+    "identity": "node scripts/check-commit-identity.mjs --all"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.2",
+    "@deepseek-ai/dsh-llm": "^0.2.0-rc.2",
+    "@deepseek-ai/dsh-tools": "^0.2.0-rc.2"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ethanchen669/dsh-plugin-fly-smart.git"
+  },
+  "homepage": "https://github.com/ethanchen669/dsh-plugin-fly-smart#readme",
+  "bugs": {
+    "url": "https://github.com/ethanchen669/dsh-plugin-fly-smart/issues"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "^4.0.4",
+    "@deepseek-ai/dsh-llm": "^0.2.0-rc.2",
+    "@deepseek-ai/dsh-tools": "^0.2.0-rc.2"
+  }
+}
