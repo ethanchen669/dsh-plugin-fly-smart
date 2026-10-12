@@ -100,7 +100,9 @@ check(`files 覆盖入口及其 import 图（${reachable.size} 个文件）`, mi
   check('那一行是本包的**裸包名**（客户端半边只对裸名行登记）', rowNames[0] === 'dsh-plugin-fly-smart', String(rowNames[0]))
   // 禁的是**工具那半边**：`tools/index.js` 的插件 inject ['tools','commands','systemPrompt']，
   // 写进 bundle 就等于宿主开机激活一个要 tools 的插件（本仓与 dsh-fly 坑表都记着）。
-  check('bundle patch 里**没有** tools 子路径行（否则宿主开机激活 inject:tools）', !bundlePatch.includes('tools/index.js'))
+  // 判据落在**行名**上，不 grep 全文：注释里提到 `tools/index.js` 是解释，不是声明
+  //（第一版 grep 全文 ⇒ 被自己的注释判红，与"grep 全文 ⇒ 假绿"是同一种坏尺子）。
+  check('bundle patch 里**没有** tools 子路径行（否则宿主开机激活 inject:tools）', rowNames.every(name => !name.includes('tools/')))
   check('tools 子路径确实存在（preset 那一行指着它）', existsSync(join(ROOT, 'tools', 'index.js')))
   check('客户端半边声明了 platform/inject', manifest.dsh?.client?.platform === 'web' && Array.isArray(manifest.dsh?.client?.inject))
 }
