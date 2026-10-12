@@ -193,9 +193,11 @@ async function call(deps, url, options = {}) {
 }
 
 test('the manifest ships each file individually and declares a Loader row', () => {
-  // 合并后**刻意不声明 exports**：bundle patch 的行名要用包内子路径
-  // （`dsh-plugin-fly-smart/panel/index.js`），exports 映射会把它挡住。
-  assert.equal(manifest.exports, undefined, 'exports 会挡住子路径行名')
+  // exports 必须**在**：`dsh.client` 要靠 `exports["./client"]` 被引擎找到
+  //（实测：缺了它 `dsh-client-modules` 直接让启动失败），同时 `./*` 保证包内子路径行名照样解析。
+  assert.equal(manifest.exports['./client'], './lib/client.js')
+  assert.equal(manifest.exports['.'], './index.js')
+  assert.equal(manifest.exports['./*'], './*')
   // A bare directory in `files` silently drops the contract for `pack:tar`.
   for (const entry of ['index.js', 'lib/state.mjs', 'lib/client.js', 'panel', 'cordis.patch.yml']) {
     assert.ok(manifest.files.includes(entry), `files 少了 ${entry}`)

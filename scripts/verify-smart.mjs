@@ -105,6 +105,13 @@ check(`files 覆盖入口及其 import 图（${reachable.size} 个文件）`, mi
   check('bundle patch 里**没有** tools 子路径行（否则宿主开机激活 inject:tools）', rowNames.every(name => !name.includes('tools/')))
   check('tools 子路径确实存在（preset 那一行指着它）', existsSync(join(ROOT, 'tools', 'index.js')))
   check('客户端半边声明了 platform/inject', manifest.dsh?.client?.platform === 'web' && Array.isArray(manifest.dsh?.client?.inject))
+  // **dsh.client 必须配 exports["./client"]**：引擎的 `dsh-client-modules` 就是靠这个键找客户端包的，
+  // 缺了直接启动失败（2026-10-12 实测原文：
+  //   `client-modules: dsh-plugin-fly-smart declares dsh.client but exports no "./client" bundle`），
+  // 而且是**必挂**（required plugin did not activate）——不是警告。
+  check('exports["./client"] 指向构建产物', manifest.exports?.['./client'] === './lib/client.js', String(manifest.exports?.['./client']))
+  check('exports["."] 指向宿主入口（裸名行挂的就是它）', manifest.exports?.['.'] === './index.js', String(manifest.exports?.['.']))
+  check('exports 不挡包子路径（tools/、panel/ 的行名还要解析）', manifest.exports?.['./*'] === './*', String(manifest.exports?.['./*']))
 }
 
 // ④ 内网 provider / 内网模型 id 不许进交付字节
