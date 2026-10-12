@@ -38,7 +38,9 @@ let testOk = true
 try {
   // 显式给文件列表：`node --test tests/` 在本机 Node 24 上会把目录当**模块**去解析
   // （实测 `Cannot find module '…/tests'`），dsh-fly 里也一直是 `node --test <file>`。
-  const specFiles = readdirSync(join(ROOT, 'tests')).filter(name => name.endsWith('.spec.mjs')).map(name => join('tests', name))
+  // 两个目录：agent 平面（tests/）与面板（panel/tests/，随面板一起并进来的契约测试）。
+  const specFiles = ['tests', join('panel', 'tests')].flatMap(dir =>
+    readdirSync(join(ROOT, dir)).filter(name => name.endsWith('.spec.mjs')).map(name => join(dir, name)))
   testOut = execFileSync(process.execPath, ['--test', ...specFiles], { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
 } catch (error) {
   testOk = false
@@ -82,13 +84,25 @@ const missing = [...reachable].filter(rel => !covered(rel))
 check(`files 覆盖入口及其 import 图（${reachable.size} 个文件）`, missing.length === 0 && reachable.size >= 2, missing.join(', '))
 
 // ③ 平面归属：不许带 dsh / dsh.bundle
-check('不带 dsh.bundle（agent 平面，由 preset 按会话挂载）', manifest.dsh === undefined, JSON.stringify(manifest.dsh ?? null))
+// 平面归属（2026-10-12 合并面板后）：本包**同时**是 agent 平面（`index.js` 的工具行由 preset
+// 按会话挂载）与宿主平面（bundle 层声明**工作台那一页**）。铁律是：bundle patch **只能**声明
+// 面板行 —— 一旦把工具行写进去，宿主平面就会在开机时激活一个 `inject: ['tools']` 的插件。
+{
+  const patchPath = join(ROOT, String(manifest.dsh?.bundle?.patch ?? 'cordis.patch.yml'))
+  const bundlePatch = existsSync(patchPath) ? readFileSync(patchPath, 'utf8') : ''
+  const rowNames = [...bundlePatch.matchAll(/^\s*-?\s*name:\s*'?([^'\n]+?)'?\s*$/gmu)].map(m => m[1])
+  check('bundle 层指向 cordis.patch.yml', manifest.dsh?.bundle?.patch === './cordis.patch.yml', String(manifest.dsh?.bundle?.patch))
+  check('bundle patch 里恰好一行（工作台那一页）', rowNames.length === 1, rowNames.join(', '))
+  check('那一行是本包内的面板子路径', rowNames[0] === 'dsh-plugin-fly-smart/panel/index.js', String(rowNames[0]))
+  check('bundle patch 里**没有**工具行（否则宿主开机激活 inject:tools）', !/^\s*-?\s*name:\s*'?dsh-plugin-fly-smart'?\s*$/mu.test(bundlePatch))
+  check('客户端半边声明了 platform/inject', manifest.dsh?.client?.platform === 'web' && Array.isArray(manifest.dsh?.client?.inject))
+}
 
 // ④ 内网 provider / 内网模型 id 不许进交付字节
 const INTERNAL = [/llm-mioffice/iu, /xiaomi\/mimo-/iu, /gpt-6-astra/iu, /ppio\/pa\//iu]
 // **跳过 scripts/**：本文件自己就带着这串模式（同 dsh-fly 的 shipping-hygiene 跳过 verify-*.mjs），
 // 不跳的话尺子会扫到自己、永远假红。
-const text = [...shipped].filter(rel => /\.(mjs|js)$/u.test(rel) && !rel.startsWith('scripts/')).map(rel => readFileSync(join(ROOT, rel), 'utf8'))
+const text = [...shipped].filter(rel => /\.(mjs|js|tsx)$/u.test(rel) && !rel.startsWith('scripts/')).map(rel => readFileSync(join(ROOT, rel), 'utf8'))
 const internalHits = text.flatMap(body => String(body).split('\n').filter(line => INTERNAL.some(pattern => pattern.test(line))))
 check('交付字节里不出现内网 provider / 内网模型 id', internalHits.length === 0, internalHits.slice(0, 2).join(' | '))
 

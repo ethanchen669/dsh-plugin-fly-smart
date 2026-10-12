@@ -1,22 +1,27 @@
 {
   "name": "dsh-plugin-fly-smart",
-  "version": "0.1.1",
-  "description": "Fly smart 工作流（agent 平面）：阶段机 + 工具面（smart_*），由 preset 按会话挂载；工作台面板是另一个包 dsh-plugin-fly-smart-panel。",
+  "version": "0.1.2",
+  "description": "Fly smart 工作流：agent 平面（阶段机 + smart_* 工具，由 preset 按会话挂载）+ 宿主平面的工作台面板（fly.smart 右抽屉页，本包 bundle 层只声明这一行）。",
   "type": "module",
   "main": "index.js",
   "files": [
     "index.js",
-    "lib/state.mjs"
+    "lib/state.mjs",
+    "lib/client.js",
+    "panel",
+    "cordis.patch.yml"
   ],
   "scripts": {
     "verify": "node scripts/verify-smart.mjs",
-    "test": "node --test tests/*.spec.mjs",
+    "test": "node --test tests/*.spec.mjs panel/tests/*.spec.mjs",
+    "build:client": "node scripts/build-client.mjs",
     "identity": "node scripts/check-commit-identity.mjs --all"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.2",
     "@deepseek-ai/dsh-llm": "^0.2.0-rc.2",
-    "@deepseek-ai/dsh-tools": "^0.2.0-rc.2"
+    "@deepseek-ai/dsh-tools": "^0.2.0-rc.2",
+    "@deepseek-ai/schemastery": "^3.18.0"
   },
   "license": "MIT",
   "repository": {
@@ -33,6 +38,19 @@
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.0.4",
     "@deepseek-ai/dsh-llm": "^0.2.0-rc.2",
-    "@deepseek-ai/dsh-tools": "^0.2.0-rc.2"
+    "@deepseek-ai/dsh-tools": "^0.2.0-rc.2",
+    "@deepseek-ai/schemastery": "^3.18.4",
+    "vite": "^5.4.21"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-sidebar-right"
+      ]
+    }
   }
 }

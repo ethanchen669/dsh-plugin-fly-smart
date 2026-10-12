@@ -145,7 +145,9 @@ export function apply(ctx, rawConfig = {}) {
       throw new Error(
         `smart: no ${field} model is configured — 给 tool-fly-smart 的行配置加 ${field}Route: { provider, model }`
         + `（有 Fly 工作台时也可在右抽屉「Smart 工作流 → 三模型路由」里选）${fallback}；当前镜像：${mirrorPath}。`
-        + ` Or set ${field}Route in the tool-fly-smart row config, or pick one in the Smart workbench`
+        + ` 三个来源任选其一：① 行配置 tool-fly-smart 的 config.${field}Route: { provider, model }；`
+        + `② 工作台「Fly → Smart」右上角的路由抽屉；`
+        + `③ **没有面板时**手改镜像文件 ${resolveMirrorPath()}（JSON：{"${field}": {"provider": "…", "model": "…"}}）。`
         + ` drawer when present (mirror: ${mirrorPath}), then retry.`,
       )
     }

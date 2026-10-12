@@ -1,0 +1,9 @@
+# dsh-plugin-fly-smart 的**宿主层**声明：只有 Fly 工作台那一页。
+#
+# **为什么只有这一行**：本包的 agent 平面半边（`index.js` 的 `smart_*` 工具）由 preset 按会话挂载，
+# 它的行声明在 `presets/fly/agent.cordis.yml` 里（`name: dsh-plugin-fly-smart`）。如果把它也写进这个
+# bundle patch，宿主平面就会在**开机时**激活一个 `inject: ['tools']` 的插件 —— 那是本仓明令禁止的形状
+# （见 dsh-fly 的 `scripts/lib/fly-profile.mjs` 与 AGENTS.md 坑表）。所以这里**只**声明面板这一页。
+- insert:
+    - id: fly-smart-panel
+      name: dsh-plugin-fly-smart/panel/index.js
