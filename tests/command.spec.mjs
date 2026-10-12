@@ -38,7 +38,7 @@ function scratch(t) {
 
 /** Apply the plugin with the mode seats recorded instead of composed. */
 async function load(config, { planMode } = {}) {
-  const mod = await import(`${pathToFileURL(join(packageRoot, 'index.js')).href}?t=${++loadCount}`)
+  const mod = await import(`${pathToFileURL(join(packageRoot, 'tools', 'index.js')).href}?t=${++loadCount}`)
   const seats = { views: [], commands: [], steered: [] }
   const ctx = {
     tools: { register: () => {} },

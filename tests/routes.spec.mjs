@@ -51,9 +51,9 @@ const packageRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
 /** 面板（`dsh-plugin-fly-smart-panel`）与工具**分属两个包、两种布局** ⇒ 按候选解析。 */
 function resolvePanelRoutes() {
   const candidates = [
-    join(packageRoot, '..', 'dsh-plugin-fly-smart-panel', 'routes.mjs'),                                  // 同仓 packages/ 下（monorepo）
-    join(packageRoot, '..', '..', 'dsh-fly', 'packages', 'dsh-plugin-fly-smart-panel', 'routes.mjs'),      // 本包已抽成独立仓，面板仍在 dsh-fly
-    ...(process.env.FLY_PLUGINS_DIR === undefined ? [] : [join(process.env.FLY_PLUGINS_DIR, 'dsh-plugin-fly-smart-panel', 'routes.mjs')]),
+    // 面板与工具现在**同一个包**（面板在 <root>/panel/，工具在 <root>/tools/）⇒ 就这一条。
+    join(packageRoot, 'panel', 'routes.mjs'),
+    join(packageRoot, '..', '..', 'dsh-fly', 'packages', 'dsh-plugin-fly-smart-panel', 'routes.mjs'),
   ]
   for (const candidate of candidates) if (existsSync(candidate)) return candidate
   // 不软跳过：路由契约是两个平面共用的承重面，找不到就得大声（AGENTS.md §1.2）。
@@ -98,7 +98,7 @@ function handRun(text, calls) {
 }
 
 async function load(config) {
-  const mod = await import(`${pathToFileURL(join(packageRoot, 'index.js')).href}?t=${++loadCount}`)
+  const mod = await import(`${pathToFileURL(join(packageRoot, 'tools', 'index.js')).href}?t=${++loadCount}`)
   const tools = new Map()
   const calls = { start: [], dispose: 0, ask: [] }
   const ctx = {

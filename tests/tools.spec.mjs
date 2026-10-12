@@ -26,7 +26,7 @@ let loadCount = 0
 
 /** Apply the plugin against a recording `ctx` and hand back its tools. */
 async function load(config) {
-  const mod = await import(`${pathToFileURL(join(packageRoot, 'index.js')).href}?t=${++loadCount}`)
+  const mod = await import(`${pathToFileURL(join(packageRoot, 'tools', 'index.js')).href}?t=${++loadCount}`)
   const tools = new Map()
   const calls = { start: 0, ask: 0 }
   // 座位齐全：`inject` 里声明的三个服务都得在，否则 apply 会在读服务时抛

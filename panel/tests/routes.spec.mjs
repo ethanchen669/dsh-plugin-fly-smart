@@ -35,7 +35,7 @@ import { fileURLToPath } from 'node:url'
 import { REAL_MIRROR, REAL_MIRROR_BYTES, SCRATCH_MIRROR } from './scratch-home.mjs'
 
 const packageRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
-const host = await import(pathToFileURL(join(packageRoot, 'index.js')).href)
+const host = await import(pathToFileURL(join(packageRoot, '..', 'index.js')).href)
 const routes = await import(pathToFileURL(join(packageRoot, 'routes.mjs')).href)
 // smart 抽成独立仓之后，它的 lib/ 不再住在 `packages/` 下 —— 走锁感知的解析
 // （`packageDir`：本仓 packages/ 优先，其次按 plugins.lock.json 到 $FLY_PLUGINS_DIR 找）。

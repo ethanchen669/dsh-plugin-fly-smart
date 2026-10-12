@@ -51,7 +51,7 @@ const HAND = { provider: 'deepseek', model: 'flash' }
 
 /** A prompt-aware tool-layer harness with per-card dispatching answers. */
 async function load(config, seams = {}) {
-  const mod = await import(`${pathToFileURL(join(packageRoot, 'index.js')).href}?t=${++loadCount}`)
+  const mod = await import(`${pathToFileURL(join(packageRoot, 'tools', 'index.js')).href}?t=${++loadCount}`)
   const tools = new Map()
   const calls = { start: [], dispose: 0, ask: [], reply: [] }
   const services = {
@@ -493,7 +493,7 @@ test('smart_brief_confirm takes no decision argument: forged confirms change not
 
 test('the three-model wording replaced the stale two-model phrasing', async () => {
   const read = async file => (await import('node:fs')).readFileSync(file, 'utf8')
-  const indexJs = await read(join(packageRoot, 'index.js'))
+  const indexJs = await read(join(packageRoot, 'tools', 'index.js'))
   // 设计文档（`dsh-fly/docs/smart-mode-design.md`）住在**宿主仓** ⇒ 那条「文档同步」的断言在宿主的
   // `scripts/verify-smart-integration.mjs` 里；本仓只断自己交付的字节。
   // ASCII 串零残留（旧称指路用中文「双模型」，不含这个 ASCII 串）。

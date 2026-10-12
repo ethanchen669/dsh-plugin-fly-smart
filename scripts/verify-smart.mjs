@@ -93,8 +93,15 @@ check(`files 覆盖入口及其 import 图（${reachable.size} 个文件）`, mi
   const rowNames = [...bundlePatch.matchAll(/^\s*-?\s*name:\s*'?([^'\n]+?)'?\s*$/gmu)].map(m => m[1])
   check('bundle 层指向 cordis.patch.yml', manifest.dsh?.bundle?.patch === './cordis.patch.yml', String(manifest.dsh?.bundle?.patch))
   check('bundle patch 里恰好一行（工作台那一页）', rowNames.length === 1, rowNames.join(', '))
-  check('那一行是本包内的面板子路径', rowNames[0] === 'dsh-plugin-fly-smart/panel/index.js', String(rowNames[0]))
-  check('bundle patch 里**没有**工具行（否则宿主开机激活 inject:tools）', !/^\s*-?\s*name:\s*'?dsh-plugin-fly-smart'?\s*$/mu.test(bundlePatch))
+  // **必须是裸包名**：`@deepseek-ai/dsh-client-modules/lib/index.js:82` 的 `exactPackageSpecifier()`
+  // 对带 `/` 的行名一律返回 undefined ⇒ 客户端半边不会被登记、面板在浏览器里根本不出现（实测过：
+  // 子路径行时 boot payload 里连一条 smart 都没有）。裸名指向**面板**，工具在 tools/ 子路径里
+  // 由 preset 挂载 ⇒ 客户端登记与"宿主不激活工具插件"两条同时成立。
+  check('那一行是本包的**裸包名**（客户端半边只对裸名行登记）', rowNames[0] === 'dsh-plugin-fly-smart', String(rowNames[0]))
+  // 禁的是**工具那半边**：`tools/index.js` 的插件 inject ['tools','commands','systemPrompt']，
+  // 写进 bundle 就等于宿主开机激活一个要 tools 的插件（本仓与 dsh-fly 坑表都记着）。
+  check('bundle patch 里**没有** tools 子路径行（否则宿主开机激活 inject:tools）', !bundlePatch.includes('tools/index.js'))
+  check('tools 子路径确实存在（preset 那一行指着它）', existsSync(join(ROOT, 'tools', 'index.js')))
   check('客户端半边声明了 platform/inject', manifest.dsh?.client?.platform === 'web' && Array.isArray(manifest.dsh?.client?.inject))
 }
 

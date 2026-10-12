@@ -74,7 +74,7 @@ const answer = label => ({
  * @returns tools plus the call recorders.
  */
 async function load(config, seams = {}) {
-  const mod = await import(`${pathToFileURL(join(packageRoot, 'index.js')).href}?t=${++loadCount}`)
+  const mod = await import(`${pathToFileURL(join(packageRoot, 'tools', 'index.js')).href}?t=${++loadCount}`)
   const tools = new Map()
   const calls = { start: [], dispose: 0, ask: [] }
   const services = {

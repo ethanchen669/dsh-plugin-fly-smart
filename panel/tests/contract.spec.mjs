@@ -30,7 +30,7 @@ import { Readable } from 'node:stream'
 const packageRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
 // 面板已并入 dsh-plugin-fly-smart：清单在**包根**，不再有面板自己的 package.json。
 const manifest = JSON.parse(readFileSync(join(packageRoot, '..', 'package.json'), 'utf8'))
-const HOST_ENTRY = join(packageRoot, 'index.js')
+const HOST_ENTRY = join(packageRoot, '..', 'index.js')
 const READER = join(packageRoot, 'reader.js')
 const BUNDLE = join(packageRoot, '..', 'lib', 'client.js')
 

@@ -51,7 +51,7 @@ function handRun(text, calls, request) {
 const spawnsOf = (calls, prefix) => calls.start.filter(item => item.request.label.startsWith(prefix))
 
 async function load(config, output = '# 手模型产出\n- 步骤 1 ok', extraTools = {}) {
-  const mod = await import(`${pathToFileURL(join(packageRoot, 'index.js')).href}?t=${++loadCount}`)
+  const mod = await import(`${pathToFileURL(join(packageRoot, 'tools', 'index.js')).href}?t=${++loadCount}`)
   const tools = new Map()
   const calls = { start: [], dispose: 0, ask: [] }
   const ctx = {
