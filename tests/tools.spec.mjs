@@ -113,8 +113,10 @@ test('begin → artifact → status drives the machine per session', async t => 
   assert.match(begun.taskId, /-ship-the-widget$/u)
   // 中文标题不留汉字：目录名要躲开 macOS 的 NFD 归一化（同名字符串比较会失手），
   // 标题本身存在 state/index 里给工作台显示，id 只负责安全。
+  // 2026-10-12 起时间戳那半是**本地日期**（`YYYY-MM-DD`），同一天第二个任务自动带 `-2` 序号
+  // ⇒ 这里容忍序号（本用例里它不是当天第一个任务）。
   const cn = JSON.parse(await tools.get('smart_begin').execute({ title: '中文任务' }, exec({})))
-  assert.match(cn.taskId, /^\d{8}-\d{6}$/u)
+  assert.match(cn.taskId, /^\d{4}-\d{2}-\d{2}(-\d+)?$/u)
 
   const recorded = JSON.parse(await tools.get('smart_artifact').execute({ phase: 'brainstorm', markdown: '# 脑暴' }, exec(session)))
   // 落盘不开门（A5）：自动 briefing 生成好，等用户在卡上确认。

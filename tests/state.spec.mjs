@@ -29,6 +29,8 @@ import {
   readBriefingRound,
   readManifest,
   createTask,
+  defaultTaskId,
+  localDateStamp,
   gateGaps,
   listTasks,
   openDecisions,
@@ -126,7 +128,21 @@ test('createTask seeds the first design phase and a safe id', t => {
   assert.equal(state.phase, 'brainstorm')
   assert.equal(state.awaitingGate, null)
   assert.deepEqual(state.gates, [])
-  assert.match(state.id, /^\d{8}-\d{6}-fix-the-widget$/u)
+  // id = **本地日期** + ASCII slug。（2026-10-12 起：时间戳那半由 UTC `YYYYMMDD-HHmmss`
+  // 换成 locale `YYYY-MM-DD`；丢掉时分秒后必须有同日去重，见下面两行。）
+  assert.match(state.id, /^\d{4}-\d{2}-\d{2}-fix-the-widget$/u)
+  // 「本地」不是「UTC」：构造一个**本地**刚过午夜的时刻 —— 用 `toISOString()` 取日期时，
+  // 东八区会退回前一天。（机器时区恰好是 UTC 时两边都过：这是一条**有时**能看见差异的尺子，
+  // 如实说明，不假装它永远有效。）
+  assert.equal(localDateStamp(new Date(2026, 0, 2, 0, 30)), '2026-01-02')
+  assert.equal(defaultTaskId('Fix the widget', new Date(2026, 0, 2, 0, 30)), '2026-01-02-fix-the-widget')
+  // 中文标题没有 ASCII 段 ⇒ id 就是日期本身；同一天再开一个必须自动加序号（不许当场 already exists）。
+  const first = createTask(root, { title: '修一下拖拽' })
+  assert.match(first.id, /^\d{4}-\d{2}-\d{2}$/u)
+  const second = createTask(root, { title: '再修一个' })
+  assert.equal(second.id, `${first.id}-2`)
+
+  assert.throws(() => createTask(root, { title: 'again', taskId: first.id }), /already exists/u)
   assert.equal(readState(root, state.id)?.title, 'Fix the widget')
 
   assert.throws(() => createTask(root, { title: '  ' }), /non-empty `title`/u)
