@@ -20,6 +20,9 @@ importers:
       '@deepseek-ai/schemastery':
         specifier: ^3.18.4
         version: 3.18.4
+      '@dsh-fly/fly-panel-style':
+        specifier: ^0.1.0
+        version: 0.1.0
       vite:
         specifier: ^5.4.21
         version: 5.4.21(lightningcss@1.33.0)
@@ -172,6 +175,9 @@ packages:
 
   '@deepseek-ai/schemastery@3.18.4':
     resolution: {integrity: sha512-SSXO6tYuyrIqKVbmOnIq0s+riUywYzouFMcnBluHF9n4KMo2G8HvEzhCYj6pj2617/glOjbJuVInJ9hfONsjkg==}
+
+  '@dsh-fly/fly-panel-style@0.1.0':
+    resolution: {integrity: sha512-Ugh8+qI13Oq97aEMAw+Hv+FCJ4WVnmJ90qtgolqxDKisnbR0QCWRPW0E6Lqily7KQmyCcIKGCw2Oc2bbx5Vx5A==}
 
   '@esbuild/aix-ppc64@0.21.5':
     resolution: {integrity: sha512-1SDgH6ZSPTlggy1yI6+Dbkiz8xzpHJEVAlF/AM1tHPLsf5STom9rwtjE4hKAF20FfXXNTFqEYXyJNWh1GiZedQ==}
@@ -747,6 +753,8 @@ snapshots:
     dependencies:
       '@deepseek-ai/cosmokit': 1.8.5
       '@standard-schema/spec': 1.1.0
+
+  '@dsh-fly/fly-panel-style@0.1.0': {}
 
   '@esbuild/aix-ppc64@0.21.5':
     optional: true

@@ -131,6 +131,19 @@ for (const rel of ['index.js', 'lib/state.mjs', 'README.md', 'LICENSE', '.gitign
   check(`存在 ${rel}`, existsSync(join(ROOT, rel)))
 }
 
+// ⑦ 面板**自带**设计系统（web 上没有工作台外壳时它也得长得对）
+//    —— 2026-10-13 的教训：面板在 web 上"有内容、没样式"，就是因为这条尺子缺席。
+{
+  const sync = execFileSync(process.execPath, [join(ROOT, 'scripts', 'sync-panel-style.mjs'), '--check'], { encoding: 'utf8' })
+  check('workbench-css.ts 与设计系统库逐字节一致', sync.includes('逐字节一致'), sync.trim().split('\n').at(-1))
+  const bundlePath = join(ROOT, 'lib', 'client.js')
+  const bundle = existsSync(bundlePath) ? readFileSync(bundlePath, 'utf8') : ''
+  check('客户端包内联了设计系统（.fly-panel 有规则）', bundle.includes('.fly-panel'), `${bundle.length} 字节`)
+  check('客户端包内联了工作台基元（.fly-card / .fly-chip）', bundle.includes('.fly-card') && bundle.includes('.fly-chip'))
+  const client = readFileSync(join(ROOT, 'src', 'client', 'index.tsx'), 'utf8')
+  check('客户端真的注入那份样式（带 data-plugin 的 <style>）', client.includes("setAttribute('data-plugin', PACKAGE)"))
+}
+
 let failed = 0
 for (const { label, ok, detail } of checks) {
   if (!ok) failed += 1

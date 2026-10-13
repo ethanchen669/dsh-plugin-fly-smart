@@ -492,7 +492,14 @@ async function loadBundle() {
   const created = []
   globalThis.document = {
     querySelector: () => null,
-    createElement: tag => { created.push(tag); return { dataset: {}, remove() {} } },
+    // 桩必须与真接缝同形：面板客户端会给 `<style>` 打 data-plugin 属性（真元素当然有
+    // setAttribute；第一版桩没有 ⇒ 面板注入样式时当场 TypeError）。
+    createElement: tag => {
+      created.push(tag)
+      const element = { dataset: {}, remove() {}, setAttribute(name, value) { element[name] = value } }
+      globalThis.document.__lastStyleTag = element
+      return element
+    },
     head: { appendChild: () => {} },
   }
   await import(`${pathToFileURL(BUNDLE).href}?t=${++loadCount}`)
@@ -520,9 +527,11 @@ test('the built bundle registers the fly.smart drawer page after the four workbe
     sidebarRightTabs: { register: definition => { types.push(definition); return () => {} } },
   })
 
-  // Presentation is the skin's: a second stylesheet tag would break the shell's
-  // "one Fly surface" assertion in the acceptance test.
-  assert.deepEqual(created, [])
+  // 面板**自带**设计系统：web 上没有工作台外壳，`.fly-*` 就没有任何规则（2026-10-13 的事故：
+  // 面板在 web 上"有内容、没样式"）。所以它现在恰好创建一个带戳的 `<style>` —— 桌面/dev 上外壳
+  // 也在场，两份规则**同源**（都来自 @dsh-fly/fly-panel-style）⇒ 值一致，只多一层。
+  assert.deepEqual(created, ['style'])
+  assert.equal(globalThis.document.__lastStyleTag?.['data-plugin'], 'dsh-plugin-fly-smart-panel')
   assert.equal(types.length, 1)
   assert.deepEqual(
     { id: types[0].id, kind: types[0].kind, title: types[0].title(), multiple: types[0].multiple },

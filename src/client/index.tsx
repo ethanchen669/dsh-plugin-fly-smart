@@ -36,6 +36,8 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 
+import { WORKBENCH_CSS } from './workbench-css'
+
 /** Cordis row name; matches the host half. */
 export const name = 'fly-smart-panel'
 
@@ -1361,6 +1363,17 @@ export function apply(ctx: BrowserContext): void {
       icon: SmartMark,
     }],
   }), 'fly-smart-panel: drawer type')
+
+  // 设计系统的样式表：**自带一份**（web 上没有工作台外壳，`.fly-*` 就没有规则）。
+  // 与外壳同一个姿势：注入一个带 `data-plugin` 的 `<style>`，卸载时移除。
+  // 桌面/dev 上外壳也在场 ⇒ 两份规则同源（都来自 @dsh-fly/fly-panel-style）⇒ 值一致、只多一层。
+  ctx.effect(() => {
+    const tag = document.createElement('style')
+    tag.setAttribute('data-plugin', PACKAGE)
+    tag.textContent = WORKBENCH_CSS
+    document.head.appendChild(tag)
+    return () => { tag.remove() }
+  }, 'fly-smart-panel: workbench stylesheet')
 
   ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register(
     { name: 'sidebar.right.pane.tab', key: PACKAGE, inject: () => ({}) },
