@@ -20,7 +20,8 @@ Fly **smart 工作流**的 **agent 平面**半边：阶段机（brainstorm → d
 | --- | --- | --- |
 | brainstorm 的独立 consult | 必须有 | **不要求**（候选方案阶段还没有可执行性可审） |
 | brainstorm 的用户版要点 | review 路由生成 | **brain 自己写**（`smart_artifact` 的 `briefing` 参数），来源记 `brain/session` |
-| design / plan / acceptance | review consult + review 要点 | 同左（可执行性审查一点没省） |
+| design / plan / acceptance | review consult + review 要点（各 1 次子代理） | **合成一次 review bundle**（同一 child 出要点 + consult） |
+| plan 与 acceptance | 两个阶段、两道门（G3、G4） | **一个阶段一道门**：两文件一次原子写入、一起评审，G3 通过直接进执行 |
 | 执行 / 验收 | 同左 | 同左 |
 
 两条不变量：

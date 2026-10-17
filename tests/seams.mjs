@@ -41,6 +41,10 @@ export const CONSULT_REVIEW = '手模型评审：缺回滚点。'
  */
 export function reviewReply(request) {
   const prompt = request?.prompt?.[0]?.text ?? ''
+  // optimized 的 review bundle：一次回复里必须同时有两段（缺一段是真格式违约）。
+  if (prompt.includes('=== BRIEFING ===')) {
+    return `=== BRIEFING ===\n${briefingText(prompt)}\n=== CONSULT ===\n${CONSULT_REVIEW}\n`
+  }
   return prompt.includes('briefing') ? briefingText(prompt) : CONSULT_REVIEW
 }
 

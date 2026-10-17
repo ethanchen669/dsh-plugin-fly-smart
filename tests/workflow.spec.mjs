@@ -20,13 +20,15 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import './scratch-home.mjs'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import {
   CONSULT_PHASES,
   WORKFLOWS,
+  listTasks,
+  taskDir,
   confirmBriefing,
   consultPhasesFor,
   createTask,
@@ -52,7 +54,7 @@ function scratch(t) {
 const HAND = { provider: 'deepseek', model: 'flash' }
 
 /** Minimal tool-layer harness: counts spawns and dispatches card answers by id. */
-async function load(config) {
+async function load(config, { output } = {}) {
   const mod = await import(`${pathToFileURL(join(packageRoot, 'tools', 'index.js')).href}?t=${++loadCount}`)
   const tools = new Map()
   const calls = { start: [], ask: [] }
@@ -60,7 +62,7 @@ async function load(config) {
     subagents: {
       start: async (provider, request) => {
         calls.start.push({ provider, request })
-        const text = reviewReply(request)
+        const text = typeof output === 'function' ? output(request) : reviewReply(request)
         return {
           id: `child-${calls.start.length}`,
           localAgent: undefined,
@@ -284,5 +286,201 @@ test('a later phase under optimized still uses the review route', async t => {
   const before = calls.start.length
   await call(tools, 'smart_artifact', { phase: 'design', markdown: '# 设计' }, session)
   assert.equal(calls.start.length, before + 1, 'design still gets a review briefing')
-  assert.match(calls.start.at(-1).request.label, /smart brief · design/u)
+  // optimized 的 design 走 bundle：一次 child 同时出要点与 consult（标签也如实说 bundle）。
+  assert.match(calls.start.at(-1).request.label, /smart bundle · design/u)
+})
+
+// ── optimized: plan + acceptance 是一对 ─────────────────────────────────────
+
+test('optimized plan records plan.md and acceptance.md together, and G3 hands over to execution', async t => {
+  const rootDir = scratch(t)
+  const { tools, calls } = await load({ rootDir, workflow: 'optimized' })
+  const session = {}
+  const begun = JSON.parse(await call(tools, 'smart_begin', { title: 'pair' }, session))
+  const id = begun.taskId
+
+  // brainstorm（inline）→ G1 → design（bundle）
+  await call(tools, 'smart_artifact', { phase: 'brainstorm', markdown: '# 脑暴', briefing: '结论 风险 未决' }, session)
+  await call(tools, 'smart_brief_confirm', {}, session)
+  await call(tools, 'smart_gate', {}, session)
+  await call(tools, 'smart_artifact', { phase: 'design', markdown: '# 设计' }, session)
+  await call(tools, 'smart_brief_confirm', {}, session)
+  await call(tools, 'smart_gate', {}, session)
+
+  // 缺伴随正文 ⇒ 明确拒绝（这一相位就是"计划+验收一起写"）
+  await assert.rejects(call(tools, 'smart_artifact', { phase: 'plan', markdown: '# 计划' }, session), /acceptanceMarkdown/u)
+
+  const paired = JSON.parse(await call(tools, 'smart_artifact', {
+    phase: 'plan',
+    markdown: '# 计划\n\n## 1. 步骤',
+    acceptanceMarkdown: '# 验收设计\n\n## A1 检查',
+  }, session))
+  assert.equal(paired.pairedWith, 'acceptance.md')
+  assert.equal(paired.recorded, 'plan')
+  // 一份 review child 同时出要点与 consult（bundle），所以两段都在返回里。
+  assert.equal(typeof paired.briefing, 'string')
+  assert.equal(typeof paired.consult, 'string')
+
+  const state = readState(rootDir, id)
+  assert.equal(state.artifacts.plan.companion, 'acceptance.md')
+  assert.equal(state.consulted === undefined, true) // state 上不存这个字段
+  assert.equal(typeof state.consults.plan, 'object')
+  assert.equal(state.reviewBundles.plan.artifactSha256, state.artifacts.plan.sha256)
+
+  await call(tools, 'smart_brief_confirm', {}, session)
+  // G3 通过**直接进执行**：optimized 没有 G4，也没有 acceptance 相位。
+  const gated = JSON.parse(await call(tools, 'smart_gate', {}, session))
+  assert.equal(gated.nextPhase, 'executing')
+  assert.equal(readState(rootDir, id).phase, 'executing')
+  assert.equal(readState(rootDir, id).awaitingGate, null)
+  assert.doesNotThrow(() => readState(rootDir, id))
+})
+
+test('a pair with an empty half writes neither file', async t => {
+  const rootDir = scratch(t)
+  const { tools } = await load({ rootDir, workflow: 'optimized' })
+  const session = {}
+  const begun = JSON.parse(await call(tools, 'smart_begin', { title: 'atomic pair' }, session))
+  await call(tools, 'smart_artifact', { phase: 'brainstorm', markdown: '# 脑暴', briefing: '结论 风险 未决' }, session)
+  await call(tools, 'smart_brief_confirm', {}, session)
+  await call(tools, 'smart_gate', {}, session)
+  await call(tools, 'smart_artifact', { phase: 'design', markdown: '# 设计' }, session)
+  await call(tools, 'smart_brief_confirm', {}, session)
+  await call(tools, 'smart_gate', {}, session)
+  await assert.rejects(
+    call(tools, 'smart_artifact', { phase: 'plan', markdown: '# 计划', acceptanceMarkdown: '   ' }, session),
+    /acceptanceMarkdown|acceptance body must be non-empty/u,
+  )
+  // 一份都没落盘 —— 不能留"计划写了、验收没写"的中间态。
+  const dir = taskDir(rootDir, begun.taskId)
+  assert.equal(existsSync(join(dir, 'acceptance.md')), false)
+  assert.equal(existsSync(join(dir, 'plan.md')), false)
+})
+
+test('optimized v1-untouched: standard tasks still walk plan → acceptance → executing', async t => {
+  const rootDir = scratch(t)
+  const { tools } = await load({ rootDir })
+  const session = {}
+  await call(tools, 'smart_begin', { title: 'v1 walk' }, session)
+  for (const phase of ['brainstorm', 'design', 'plan']) {
+    await call(tools, 'smart_artifact', { phase, markdown: `# ${phase}` }, session)
+    await call(tools, 'smart_brief_confirm', {}, session)
+    await call(tools, 'smart_consult', {}, session)
+    await call(tools, 'smart_gate', {}, session)
+  }
+  // v1 的 G3 之后仍然是 acceptance（新相位），不是 executing。
+  const tasks = listTasks(rootDir)
+  assert.equal(tasks.length, 1)
+  assert.equal(readState(rootDir, tasks[0].id).phase, 'acceptance')
+})
+
+// ── review bundle：一次 child 出两段；consult 复用不再 spawn ────────────────
+
+test('one bundle child records both halves, and smart_consult reuses it without spawning', async t => {
+  const rootDir = scratch(t)
+  const { tools, calls } = await load({ rootDir, workflow: 'optimized' })
+  const session = {}
+  await call(tools, 'smart_begin', { title: 'bundle' }, session)
+  await call(tools, 'smart_artifact', { phase: 'brainstorm', markdown: '# 脑暴', briefing: '结论 风险 未决' }, session)
+  await call(tools, 'smart_brief_confirm', {}, session)
+  await call(tools, 'smart_gate', {}, session)
+
+  const before = calls.start.length
+  const recorded = JSON.parse(await call(tools, 'smart_artifact', { phase: 'design', markdown: '# 设计' }, session))
+  assert.equal(calls.start.length, before + 1, 'one child for briefing + consult')
+  assert.equal(recorded.consult.length > 0, true)
+
+  // consult 命中 bundle：零额外 spawn，且把同一份评审还给模型。
+  const hit = JSON.parse(await call(tools, 'smart_consult', {}, session))
+  assert.equal(hit.bundleHit, true)
+  assert.equal(calls.start.length, before + 1, 'bundle hit must not spawn')
+  assert.equal(hit.review.length > 0, true)
+
+  const status = JSON.parse(await call(tools, 'smart_status', {}, session))
+  // 真实计数：design 那一段只记**一次** review 调用（不是 briefing + consult 的两次）。
+  assert.equal(status.metrics.reviewSpawns, 1)
+  // 两轮要点：brainstorm 的 inline（brain 写）+ design 的 bundle（review 写）。
+  assert.equal(status.metrics.briefings, 2)
+  assert.equal(status.metrics.brainRounds, 1)
+  assert.equal(status.metrics.consults, 1)
+})
+
+test('a stale bundle forces a fresh child (freshness is by artifact sha)', async t => {
+  const rootDir = scratch(t)
+  const { tools, calls } = await load({ rootDir, workflow: 'optimized' })
+  const session = {}
+  await call(tools, 'smart_begin', { title: 'stale bundle' }, session)
+  await call(tools, 'smart_artifact', { phase: 'brainstorm', markdown: '# 脑暴', briefing: '结论 风险 未决' }, session)
+  await call(tools, 'smart_brief_confirm', {}, session)
+  await call(tools, 'smart_gate', {}, session)
+  await call(tools, 'smart_artifact', { phase: 'design', markdown: '# 设计 v1' }, session)
+  const afterFirst = calls.start.length
+  // 改稿（briefing 变 stale、门仍关着 ⇒ 允许重写）→ bundle 必须重跑。
+  await call(tools, 'smart_artifact', { phase: 'design', markdown: '# 设计 v2' }, session)
+  assert.equal(calls.start.length, afterFirst + 1, 'rewriting the artifact must invalidate the bundle')
+  const again = JSON.parse(await call(tools, 'smart_consult', {}, session))
+  assert.equal(again.bundleHit, true, 'the new bundle answers the consult')
+  assert.equal(calls.start.length, afterFirst + 1)
+})
+
+test('a malformed bundle fails closed: no consult, no round, retry works', async t => {
+  const rootDir = scratch(t)
+  let malformed = true
+  const { tools, calls } = await load({ rootDir, workflow: 'optimized' }, {
+    output: request => (request.prompt[0].text.includes('=== BRIEFING ===') && malformed
+      ? '只有一段评审，没有分隔标记'
+      : (request.prompt[0].text.includes('=== BRIEFING ===')
+        ? `=== BRIEFING ===\n覆盖章节：全文\n结论 风险 未决\n=== CONSULT ===\n缺回滚点\n`
+        : 'x')),
+  })
+  const session = {}
+  const begun = JSON.parse(await call(tools, 'smart_begin', { title: 'malformed' }, session))
+  await call(tools, 'smart_artifact', { phase: 'brainstorm', markdown: '# 脑暴', briefing: '结论 风险 未决' }, session)
+  await call(tools, 'smart_brief_confirm', {}, session)
+  await call(tools, 'smart_gate', {}, session)
+
+  const bad = JSON.parse(await call(tools, 'smart_artifact', { phase: 'design', markdown: '# 设计' }, session))
+  assert.equal(bad.briefingFailed, true)
+  const state = readState(rootDir, begun.taskId)
+  // fail closed：consult 一行都没写、要点没有轮、门不开。
+  assert.equal(state.consults.design, undefined)
+  assert.equal(state.briefings.design?.rounds?.length ?? 0, 0)
+  assert.equal(state.awaitingGate, null)
+
+  malformed = false
+  const retried = JSON.parse(await call(tools, 'smart_brief', {}, session))
+  assert.equal(retried.briefed, true)
+  assert.equal(typeof readState(rootDir, begun.taskId).consults.design, 'object')
+})
+
+test('rework from an optimized task archives plan.md and its acceptance companion together', async t => {
+  const rootDir = scratch(t)
+  const { tools } = await load({ rootDir, workflow: 'optimized' })
+  const session = {}
+  const begun = JSON.parse(await call(tools, 'smart_begin', { title: 'rework pair' }, session))
+  const id = begun.taskId
+  await call(tools, 'smart_artifact', { phase: 'brainstorm', markdown: '# 脑暴', briefing: '结论 风险 未决' }, session)
+  await call(tools, 'smart_brief_confirm', {}, session)
+  await call(tools, 'smart_gate', {}, session)
+  await call(tools, 'smart_artifact', { phase: 'design', markdown: '# 设计' }, session)
+  await call(tools, 'smart_brief_confirm', {}, session)
+  await call(tools, 'smart_gate', {}, session)
+  await call(tools, 'smart_artifact', { phase: 'plan', markdown: '# 计划', acceptanceMarkdown: '# 验收' }, session)
+  await call(tools, 'smart_brief_confirm', {}, session)
+  await call(tools, 'smart_gate', {}, session)
+  await call(tools, 'smart_execute', {}, session)
+  await call(tools, 'smart_brief_confirm', {}, session)
+  await call(tools, 'smart_verify', {}, session)
+  await call(tools, 'smart_artifact', { phase: 'reviewing', markdown: '# 验收结论' }, session)
+
+  const rewound = JSON.parse(await call(tools, 'smart_rework', { reason: '验收不过', backTo: 'plan' }, session))
+  assert.equal(rewound.phase, 'plan')
+  assert.equal(readState(rootDir, id).artifacts.plan, undefined)
+  // 两份都进了 history：留一份孤儿 acceptance.md 会被下一次落盘当成"已经是这一轮的产物"。
+  const dir = taskDir(rootDir, id)
+  assert.equal(existsSync(join(dir, 'plan.md')), false)
+  assert.equal(existsSync(join(dir, 'acceptance.md')), false)
+  const history = readdirSync(join(dir, 'history'))
+  assert.equal(history.some(name => name.endsWith('-plan.md')), true)
+  assert.equal(history.some(name => name.endsWith('-acceptance.md')), true)
 })

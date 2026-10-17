@@ -16,6 +16,8 @@
  * @module dsh-plugin-fly-smart
  */
 
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import {
@@ -41,10 +43,15 @@ import {
   readState,
   recordArtifact,
   recordBriefing,
+  recordReviewBundle,
+  freshReviewBundle,
+  recordPlanAcceptance,
+  companionFileOf,
   recordBriefingFailure,
   confirmBriefing,
   missingBriefingSections,
   recordConsult,
+  readConsult,
   recordDecisions,
   recordVerification,
   resolveConfig,
@@ -55,6 +62,7 @@ import {
   reworkTo,
   finishTask,
   taskStatus,
+  taskDir,
 } from '../lib/state.mjs'
 
 /** Cordis plugin name, matched by the preset row's `name`. */
@@ -348,6 +356,61 @@ export function apply(ctx, rawConfig = {}) {
     'Be specific and complete over long: the user decides from this and the conversation, not from the raw draft. No praise.',
   ].filter(line => line !== '').join('\n')
 
+  /** optimized：把 plan 与伴随 acceptance 拼成一份给 review 的正文。 */
+  const artifactForReview = (rootDir, id, phase) => {
+    const main = readArtifact(rootDir, id, phase) ?? ''
+    const companion = companionFileOf(phase)
+    if (companion === null) return main
+    let extra = ''
+    try {
+      extra = readFileSync(join(taskDir(rootDir, id), companion), 'utf8')
+    } catch {
+      extra = ''
+    }
+    return extra === '' ? main : `${main.trimEnd()}\n\n--- ${companion} ---\n${extra.trimEnd()}`
+  }
+
+  const BUNDLE_MARKERS = { briefing: '=== BRIEFING ===', consult: '=== CONSULT ===' }
+
+  /**
+   * 一次 review child 出两段：先给用户的要点，再给模型的可行性评审。
+   *
+   * 两段用**固定分隔行**隔开，解析时要求两段都非空 —— 缺一段就是格式违约，整次失败
+   * （fail closed）：宁可让模型重跑一次，也不能把"只有评审、没有要点"的半套结果落盘。
+   */
+  const bundlePrompt = ({ state, phase, draft, question }) => [
+    `You are the *review* model in a three-model workflow. Produce **two** outputs for the ${phase} artifact below, in one reply.`,
+    '',
+    `Task: ${state.title}`,
+    state.goal === '' ? '' : `Goal: ${state.goal}`,
+    '',
+    `--- ${ARTIFACT_FILE[phase]} ---`,
+    draft.trimEnd(),
+    '--- end ---',
+    '',
+    `Reply with exactly these two sections, each starting with its marker line, in this order:`,
+    BUNDLE_MARKERS.briefing,
+    'What the USER needs to know, in plain user-facing language: name every section heading of the artifact on a first `覆盖章节：…` line (machine-checked), then explain 已定 / 建议 / 未决 and the details that change the decision. At most 3 questions to the user. No audit voice.',
+    BUNDLE_MARKERS.consult,
+    question === undefined || question.trim() === '' ? 'Your feasibility review for the model that will execute: blocking problems first, then concrete additions. Be specific.' : question.trim(),
+    '',
+    'Do not omit either marker. No praise, no restating the artifact.',
+  ].filter(line => line !== '').join('\n')
+
+  /** 解析两段；缺段/空段 ⇒ 抛错（调用方保证产物不动、可重试）。 */
+  const parseBundle = body => {
+    const text = String(body ?? '')
+    const briefingAt = text.indexOf(BUNDLE_MARKERS.briefing)
+    const consultAt = text.indexOf(BUNDLE_MARKERS.consult)
+    if (briefingAt === -1 || consultAt === -1 || consultAt < briefingAt) {
+      throw new Error('smart: the review reply is missing one of the two sections (=== BRIEFING === / === CONSULT ===); nothing was recorded — retry')
+    }
+    const briefingBody = text.slice(briefingAt + BUNDLE_MARKERS.briefing.length, consultAt).trim()
+    const consultBody = text.slice(consultAt + BUNDLE_MARKERS.consult.length).trim()
+    if (briefingBody === '' || consultBody === '') throw new Error('smart: one section of the review reply is empty; nothing was recorded — retry')
+    return { briefingBody, consultBody }
+  }
+
   /** The review brief for the hand model: the draft is the whole context. */
   const consultPrompt = ({ state, phase, draft, question }) => [
     `You are the *review* model in a three-model workflow (brain designs, you review, hand executes). Review the ${phase} artifact below for execution feasibility and say what would break.`,
@@ -534,6 +597,10 @@ export function apply(ctx, rawConfig = {}) {
         enum: ['brainstorm', 'design', 'plan', 'acceptance', 'executing', 'reviewing'],
       },
       markdown: { type: 'string', description: 'The full artifact body, markdown.' },
+      acceptanceMarkdown: {
+        type: 'string',
+        description: 'Required for `phase: "plan"` under the optimized workflow: the acceptance design. The two files are written together and reviewed by one child, so this phase replaces the separate acceptance gate. Leave it out everywhere else.',
+      },
       briefing: {
         type: 'string',
         description: 'Optional: the user-facing digest of this artifact, written by you (the brain). Required for brainstorm under the optimized workflow, which spawns no review child for that phase; on every other phase leave it out — the review route writes that digest (and a passing one here would be ignored).',
@@ -546,6 +613,34 @@ export function apply(ctx, rawConfig = {}) {
       exec.signal?.throwIfAborted?.()
       const id = pickTaskId(exec, args)
       const rootDir = taskRootOf(id, exec)
+      // optimized 的 plan 相位：计划与验收设计是**一次操作**（两文件一起写、一起评）。
+      // 相位名仍是 plan，相位表不动；v1 的任务永远走下面那条老路。
+      const needsPair = (() => {
+        const current = readState(rootDir, id)
+        return current?.workflow === 'optimized' && args.phase === 'plan'
+      })()
+      if (needsPair) {
+        if (typeof args.acceptanceMarkdown !== 'string' || args.acceptanceMarkdown.trim() === '') {
+          throw new Error('smart: the optimized workflow records plan.md and acceptance.md together — pass `acceptanceMarkdown` with the acceptance design (this phase replaces the separate acceptance gate)')
+        }
+        const paired = recordPlanAcceptance(rootDir, id, args.markdown, args.acceptanceMarkdown)
+        remember(exec, id)
+        const briefResult = await (async () => {
+          try {
+            return await briefArtifact(exec, { rootDir, id, phase: 'plan' })
+          } catch (error) {
+            return { briefingFailed: true, error: String(error?.message ?? error), nextStep: 'the pair is on disk but its review bundle failed — retry with smart_brief' }
+          }
+        })()
+        return summary(rootDir, id, {
+          recorded: 'plan',
+          pairedWith: 'acceptance.md',
+          awaitingGate: paired.awaitingGate,
+          ...briefResult.briefingFailed === true
+            ? { briefingFailed: true, briefingError: briefResult.error, nextStep: briefResult.nextStep }
+            : { briefing: briefResult.briefing, briefingRound: briefResult.round, consult: briefResult.consult, bundled: briefResult.bundled === true, nextStep: 'walk the user through the briefing in conversation, then call smart_brief_confirm — one confirmation covers both plan.md and acceptance.md' },
+        })
+      }
       const state = recordArtifact(rootDir, id, args.phase, args.markdown)
       remember(exec, id)
       // optimized 工作流的 brainstorm **不派 review 子代理**：候选方案阶段还没有可执行性可审，
@@ -579,7 +674,13 @@ export function apply(ctx, rawConfig = {}) {
           ? { briefingFailed: true, briefingError: brief.error, nextStep: brief.nextStep }
           : brief.briefingRequired === true
             ? { briefingRequired: true, nextStep: brief.nextStep }
-            : { briefing: brief.briefing, briefingRound: brief.round, nextStep: 'walk the user through the briefing in conversation (key points + critical details, leave room for questions), then call smart_brief_confirm — discussion does not open the gate' },
+            : {
+              briefing: brief.briefing,
+              briefingRound: brief.round,
+              // bundle 路径同时已经把 consult 落盘了：返回里如实带上，模型不必再调 smart_consult。
+              ...brief.consult === undefined ? {} : { consult: brief.consult, bundled: brief.bundled === true },
+              nextStep: 'walk the user through the briefing in conversation (key points + critical details, leave room for questions), then call smart_brief_confirm — discussion does not open the gate',
+            },
         // 没开门前必须说清为什么、下一步做什么：产物里还留着只有用户能定的问题。
         ...pending === null ? {} : {
           decisionsPending: pending.items,
@@ -611,6 +712,33 @@ export function apply(ctx, rawConfig = {}) {
       if (state.phase !== phase) throw new Error(`smart: task "${id}" is in phase "${state.phase}"; the "${phase}" review comes with its own phase`)
       const draft = readArtifact(rootDir, id, phase)
       if (draft === null) throw new Error(`smart: write ${ARTIFACT_FILE[phase]} before asking for a review of it`)
+      // optimized：上一次 bundle 若仍绑着**这份**产物，consume 它，不再起第二个 child ——
+      // 这正是"两次 review 调用合成一次"的另一半。
+      if (state.workflow === 'optimized' && BUNDLE_PHASES.includes(phase)) {
+        const bundle = freshReviewBundle(rootDir, state, phase)
+        if (bundle !== null) {
+          const recorded = readConsult(rootDir, id, phase)
+          if (recorded !== null) {
+            return summary(rootDir, id, {
+              consulted: phase,
+              reviewer: `${bundle.provider}/${bundle.model}`,
+              review: recorded.body,
+              bundleHit: true,
+              nextStep: 'this consult came from the same review child as the briefing (no extra spawn); decide whether to fold anything into the artifact',
+            })
+          }
+        }
+        // 没有 fresh bundle（要点生成失败/产物改过）：自己跑一次 bundle，两段一起补齐。
+        const produced = await runReviewBundle(exec, { rootDir, id, phase, question: args.question })
+        return summary(rootDir, id, {
+          consulted: phase,
+          reviewer: produced.bundleRoute ?? null,
+          review: produced.consult,
+          bundleHit: false,
+          briefingRound: produced.round,
+          nextStep: 'walk the user through the briefing in conversation, then record their answer with smart_brief_confirm',
+        })
+      }
       const { route, body } = await runHand(exec, {
         label: `smart consult · ${phase}`,
         prompt: consultPrompt({ state, phase, draft, question: args.question }),
@@ -720,6 +848,42 @@ export function apply(ctx, rawConfig = {}) {
    *     a digest that skips a section is worse than none (it reads as coverage);
    *   - no artifact ⇒ the caller's precondition throw.
    */
+  /**
+   * optimized 的哪些阶段把「要点 + consult」合成一次 bundle：
+   * 正好是那些**必须有 consult** 的设计阶段。brainstorm 走 brain 自写，executing/reviewing
+   * 没有独立 consult，三者都不进 bundle。
+   */
+  const BUNDLE_PHASES = ['design', 'plan', 'acceptance']
+
+  /** 跑一次 bundle child：一次调用同时拿到用户要点与可行性评审。 */
+  const runReviewBundle = async (exec, { rootDir, id, phase, question }) => {
+    const state = readState(rootDir, id)
+    const draft = artifactForReview(rootDir, id, phase)
+    const produced = await runHand(exec, {
+      label: `smart bundle · ${phase}`,
+      prompt: bundlePrompt({ state, phase, draft, question }),
+      toolFilter: { deny: SMART_TOOL_NAMES },
+      role: 'review',
+    })
+    const { briefingBody, consultBody } = parseBundle(produced.body)
+    const next = recordReviewBundle(rootDir, id, phase, {
+      provider: produced.route.provider,
+      model: produced.route.model,
+      source: produced.source,
+      briefingBody,
+      consultBody,
+      question: question ?? '',
+    })
+    return {
+      briefing: briefingBody,
+      consult: consultBody,
+      source: produced.source,
+      bundleRoute: `${produced.route.provider}/${produced.route.model}`,
+      round: next.briefings[phase].current,
+      bundled: true,
+    }
+  }
+
   const briefArtifact = async (exec, { rootDir, id, phase, inline = undefined }) => {
     const state = readState(rootDir, id)
     const draft = readArtifact(rootDir, id, phase)
@@ -735,6 +899,17 @@ export function apply(ctx, rawConfig = {}) {
       }
       const next = recordBriefing(rootDir, id, phase, { provider: null, model: null, source: 'brain/session', body: inline })
       return { briefing: inline, source: 'brain/session', round: next.briefings[phase].current, brainAuthored: true }
+    }
+    // optimized：design/plan/acceptance 用**一次** child 同时出要点与 consult。
+    const workflow = readState(rootDir, id)?.workflow
+    if (workflow === 'optimized' && BUNDLE_PHASES.includes(phase)) {
+      try {
+        return await runReviewBundle(exec, { rootDir, id, phase })
+      } catch (error) {
+        const message = String(error?.message ?? error)
+        recordBriefingFailure(rootDir, id, phase, error)
+        return { briefingFailed: true, error: message, nextStep: `the review bundle for "${phase}" failed (${message}) — the artifact is untouched; retry with smart_brief` }
+      }
     }
     let produced
     try {
