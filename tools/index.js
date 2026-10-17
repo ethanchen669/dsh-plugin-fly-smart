@@ -429,7 +429,8 @@ export function apply(ctx, rawConfig = {}) {
     'Smart mode is active for this session: run the task as a three-model workflow — design, then execute, then accept.',
     '',
     'Discipline (the tools enforce the mechanical parts; these are the parts only you can honour):',
-    '1. Open the task with smart_begin, then work the design phases in order: brainstorm → design → plan → acceptance. Write each artifact with smart_artifact and stop at its gate.',
+    '1. Open the task with smart_begin, then work the design phases in order: brainstorm → design → plan → acceptance. Write each artifact with smart_artifact and stop at its gate. The artifact contract differs per phase: brainstorm is a **decision table** (problem / candidates / current lean / open questions) that is explicitly NOT yet approved; design turns the accepted choice into an **ADR-lite** section (context, options, decision and why, consequences, revisit trigger) — the decision record belongs where the choice is made, not in the phase that was still exploring.',
+    '1b. Under the optimized workflow the brainstorm phase spawns no review child: you write its user-facing digest yourself and pass it as smart_artifact\'s `briefing` argument (provenance is recorded as brain/session, never as an independent review). Every later phase keeps the review route.',
     '2. Before every gate, call smart_consult so the review model audits that phase for execution feasibility. Reviews are cheap; discovering an unexecutable plan after execution is not.',
     '3. Before a gate, settle what only the user can decide: put those questions to them with smart_decide (the same option card, recorded), fold the answers into the artifact as an 已裁决 section, and re-record it. A draft that still carries a 需要你裁决 section does not open its gate at all — the recommendation you wrote must not silently become their decision.',
     '4. After every artifact lands (including the execution report and the review), a briefing is generated for it (smart_artifact does this; smart_brief only retries a failed one). Walk the user through that briefing **in ordinary conversation** — the key points and the critical details, section by section — and leave room for their questions and requested changes. Discussing is not approving: nothing you say, and nothing they say in chat, opens anything.',
@@ -512,7 +513,7 @@ export function apply(ctx, rawConfig = {}) {
       const supportedEfforts = await supportedEffortsOf(exec)
       const effort = resolveBrainstormEffort(brainstormDepth, supportedEfforts)
       const brainRoute = config.brainRoute === undefined ? undefined : { ...config.brainRoute, reasoningEffort: effort.reasoningEffort }
-      const state = createTask(rootDir, args, { ...where ?? {}, maxRework: config.maxRework, brainstormDepth: effort.depth, brainstormEffort: effort.reasoningEffort, brainRoute })
+      const state = createTask(rootDir, args, { ...where ?? {}, maxRework: config.maxRework, workflow: config.workflow, brainstormDepth: effort.depth, brainstormEffort: effort.reasoningEffort, brainRoute })
       remember(exec, state.id)
       return summary(rootDir, state.id, {
         created: true,
@@ -533,6 +534,10 @@ export function apply(ctx, rawConfig = {}) {
         enum: ['brainstorm', 'design', 'plan', 'acceptance', 'executing', 'reviewing'],
       },
       markdown: { type: 'string', description: 'The full artifact body, markdown.' },
+      briefing: {
+        type: 'string',
+        description: 'Optional: the user-facing digest of this artifact, written by you (the brain). Required for brainstorm under the optimized workflow, which spawns no review child for that phase; on every other phase leave it out — the review route writes that digest (and a passing one here would be ignored).',
+      },
       taskId: { type: 'string', description: 'Optional; defaults to the session\'s active task.' },
     },
     output: textOutput,
@@ -543,16 +548,27 @@ export function apply(ctx, rawConfig = {}) {
       const rootDir = taskRootOf(id, exec)
       const state = recordArtifact(rootDir, id, args.phase, args.markdown)
       remember(exec, id)
+      // optimized 工作流的 brainstorm **不派 review 子代理**：候选方案阶段还没有可执行性可审，
+      // 那一次评审是纯开销。要点由 brain 自己写（`briefing` 参数），记成 `brain/session` 来源。
+      const inline = typeof args.briefing === 'string' && args.briefing.trim() !== '' ? args.briefing : undefined
+      const brainBriefs = state.workflow === 'optimized' && args.phase === 'brainstorm'
       // 产物落盘即自动生成 briefing（acceptance A1）：这条路是主路径，smart_brief 只做
       // 失败重试/旧任务补生成。生成失败**不冒泡**成落盘失败 —— 产物永远保留（A2）。
       let brief
-      try {
-        brief = await briefArtifact(exec, { rootDir, id, phase: args.phase })
-      } catch (error) {
+      if (brainBriefs && inline === undefined) {
         brief = {
-          briefingFailed: true,
-          error: String(error?.message ?? error),
-          nextStep: `the artifact is on disk but its briefing is incomplete — fix the review output and retry with smart_brief`,
+          briefingRequired: true,
+          nextStep: 'brainstorm 的用户版要点由你（brain）写：把要点放进 `briefing` 参数，用同一份 markdown 再调一次 smart_artifact —— 记成 brain/session 来源、不派 review 子代理（optimized 工作流）。要点必须逐个点到产物的每个 ## 小节。',
+        }
+      } else {
+        try {
+          brief = await briefArtifact(exec, { rootDir, id, phase: args.phase, inline: brainBriefs ? inline : undefined })
+        } catch (error) {
+          brief = {
+            briefingFailed: true,
+            error: String(error?.message ?? error),
+            nextStep: `the artifact is on disk but its briefing is incomplete — fix the review output and retry with smart_brief`,
+          }
         }
       }
       const pending = state.pendingDecisions ?? null
@@ -561,7 +577,9 @@ export function apply(ctx, rawConfig = {}) {
         awaitingGate: state.awaitingGate,
         ...brief.briefingFailed === true
           ? { briefingFailed: true, briefingError: brief.error, nextStep: brief.nextStep }
-          : { briefing: brief.briefing, briefingRound: brief.round, nextStep: 'walk the user through the briefing in conversation (key points + critical details, leave room for questions), then call smart_brief_confirm — discussion does not open the gate' },
+          : brief.briefingRequired === true
+            ? { briefingRequired: true, nextStep: brief.nextStep }
+            : { briefing: brief.briefing, briefingRound: brief.round, nextStep: 'walk the user through the briefing in conversation (key points + critical details, leave room for questions), then call smart_brief_confirm — discussion does not open the gate' },
         // 没开门前必须说清为什么、下一步做什么：产物里还留着只有用户能定的问题。
         ...pending === null ? {} : {
           decisionsPending: pending.items,
@@ -702,10 +720,22 @@ export function apply(ctx, rawConfig = {}) {
    *     a digest that skips a section is worse than none (it reads as coverage);
    *   - no artifact ⇒ the caller's precondition throw.
    */
-  const briefArtifact = async (exec, { rootDir, id, phase }) => {
+  const briefArtifact = async (exec, { rootDir, id, phase, inline = undefined }) => {
     const state = readState(rootDir, id)
     const draft = readArtifact(rootDir, id, phase)
     if (draft === null) throw new Error(`smart: write ${ARTIFACT_FILE[phase]} before briefing it`)
+    // inline（brain 自写）与 review 生成走**同一条**完整性检查与落轮路径，只在来源上不同：
+    // 没有 provider/model 的轮必须如实标注 brain/session，不能伪装成独立评审（acceptance B5）。
+    if (typeof inline === 'string' && inline.trim() !== '') {
+      const missing = missingBriefingSections(draft, inline)
+      if (missing.length > 0) {
+        const error = new Error(`smart: the briefing for "${phase}" does not cover the artifact — missing: ${missing.join('; ')}. Nothing was recorded; cover every section.`)
+        recordBriefingFailure(rootDir, id, phase, error)
+        throw error
+      }
+      const next = recordBriefing(rootDir, id, phase, { provider: null, model: null, source: 'brain/session', body: inline })
+      return { briefing: inline, source: 'brain/session', round: next.briefings[phase].current, brainAuthored: true }
+    }
     let produced
     try {
       produced = await runHand(exec, {

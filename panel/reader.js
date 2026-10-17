@@ -370,7 +370,7 @@ export function briefingReport(dir, state) {
       current: entry?.current ?? 0,
       status,
       at: round?.at ?? entry?.failedAt ?? null,
-      route: round === null ? null : `${round.provider ?? '?'}/${round.model ?? '?'}`,
+      route: round === null || (round.provider == null && round.model == null) ? null : `${round.provider ?? '?'}/${round.model ?? '?'}`,
       source: round?.source ?? null,
       lastError: typeof entry?.lastError === 'string' ? entry.lastError : null,
     }

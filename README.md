@@ -11,6 +11,26 @@ Fly **smart 工作流**的 **agent 平面**半边：阶段机（brainstorm → d
 - **三模型路由**（brain / hand / review）是**用户机器**上的状态（`~/.dsh-fly/smart-routes.json`，面板写），
   行配置 `<field>Route` 优先；未配置时工具会大声报错并指路。
 
+## 工作流策略：`workflow`
+
+行配置（或 preset 行）可写 `workflow: v1 | optimized`，**默认 `v1`** —— 既有任务一行代码都不变。
+版本在 `smart_begin` 时**记进任务 state**，之后改行配置不会让在途任务换语义。
+
+| | `v1`（历史行为） | `optimized`（省一轮评审） |
+| --- | --- | --- |
+| brainstorm 的独立 consult | 必须有 | **不要求**（候选方案阶段还没有可执行性可审） |
+| brainstorm 的用户版要点 | review 路由生成 | **brain 自己写**（`smart_artifact` 的 `briefing` 参数），来源记 `brain/session` |
+| design / plan / acceptance | review consult + review 要点 | 同左（可执行性审查一点没省） |
+| 执行 / 验收 | 同左 | 同左 |
+
+两条不变量：
+- **brain 自写的要点仍要过同一条完整性检查**（每个 `##` 小节都要点到），缺节不写轮、门不开；
+- **来源必须如实**：`brain/session` 的轮没有 provider/model，状态与面板里的路由显示为空，
+  不会伪装成独立评审。
+
+省了多少钱可以从磁盘算：`smart_status` 的 `spawns` 给出至今的子代理调用估算
+（briefing 轮 + consult + 取证 + 执行报告），不参与任何闸门判定。
+
 ## 装 / 开发
 
 - 作为 preset 行：宿主仓（dsh-fly）的 `presets/fly/agent.cordis.yml` 里是 `name: dsh-plugin-fly-smart`；
