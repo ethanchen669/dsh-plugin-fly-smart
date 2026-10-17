@@ -334,6 +334,18 @@ interface TaskPayload {
   history: HistoryRow[]
   summary: { file: string; bytes: number | null; markdown: string } | null
   routes: RouteReport
+  /** 任务自己的策略版本（旧任务没有字段 ⇒ 'v1'）。 */
+  workflow?: string
+  /** reader 给的阶段板（optimized 的验收设计并入计划、没有 G4）。 */
+  board?: BoardCell[]
+}
+
+/** 一个阶段板格。 */
+interface BoardCell {
+  id: string
+  label: string
+  gate: string | null
+  mergedInto?: string
 }
 
 /** One capsule in the drawer's empty-state guide. */
@@ -873,13 +885,23 @@ function RouteCard({ config, sessionId, onSaved }: { config: RouteConfig | null;
  * and "gate recorded" cannot disagree in a well-formed task; the archived case is
  * checked first because an archived task ends with every gate passed.
  */
-function phaseStatus(phase: (typeof BOARD)[number], task: TaskPayload): PhaseStatus {
+function phaseStatus(phase: BoardCell, task: TaskPayload): PhaseStatus {
   const state = task.state
   const archived = typeof state.archivedAt === 'string'
-  const order = BOARD.map(entry => entry.id as string)
+  const cells: readonly BoardCell[] = task.board ?? BOARD
+  const order = cells.map(entry => entry.id as string)
   const currentIndex = order.indexOf(state.phase)
   const index = order.indexOf(phase.id)
   if (archived) return phase.id === 'done' ? 'archived' : 'passed'
+  // 并入计划的那一格（optimized 的验收设计）：它的状态跟着 pair 走 —— 两份产物都落盘
+  // 就算"已过门"，否则待做。给它单独算会让面板永远停在"待做"，因为 G4 不会发生。
+  if (phase.mergedInto !== undefined) {
+    const pairLanded = task.artifacts.plan !== undefined && task.artifacts.acceptance !== undefined
+    if (!pairLanded) return 'todo'
+    const currentIndexForPair = order.indexOf(state.phase)
+    const planIndex = order.indexOf(phase.mergedInto)
+    return currentIndexForPair !== -1 && planIndex < currentIndexForPair ? 'passed' : 'active'
+  }
   const gatePassed = phase.gate !== null && task.gates.some(record => record.gate === phase.gate)
   if (gatePassed || (currentIndex !== -1 && index < currentIndex)) return 'passed'
   if (index === currentIndex) return 'active'
@@ -1178,7 +1200,7 @@ export function SmartPanel() {
           <section className="fly-card" data-probe="board">
             <h2>阶段板</h2>
             <div className="fly-grid">
-              {BOARD.map(entry => {
+              {(task.board ?? BOARD).map(entry => {
                 const status = phaseStatus(entry, task)
                 // 完成 阶段的产物是收尾总结：reader 把它放在 task.summary，不塞进 artifacts。
                 // 产物查看器早就有「收尾总结」页签，阶段板这一格却写着「—」—— 同一个文件在

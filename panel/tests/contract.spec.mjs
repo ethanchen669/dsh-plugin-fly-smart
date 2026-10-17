@@ -575,3 +575,55 @@ test('the real mirror is never touched by this suite, and an empty row writes no
   assert.equal(mergeRowRoutes(file, {}), null)
   assert.equal(existsSync(file), false)
 })
+
+// ── optimized 工作流的阶段板 ────────────────────────────────────────────────
+
+test('the reader hands the page a workflow board: optimized merges acceptance into plan and drops G4', async () => {
+  const root = plantRoot()
+  const deps = makeDeps({ root })
+  try {
+    // 先把任务改成 optimized + 落一对产物（相位名仍是 plan）。
+    const stateFile = join(root, 'tasks', FIXTURE_ID, 'state.json')
+    const state = JSON.parse(readFileSync(stateFile, 'utf8'))
+    state.workflow = 'optimized'
+    state.phase = 'plan'
+    state.awaitingGate = 'G3'
+    state.artifacts = {
+      brainstorm: { file: 'brainstorm.md', bytes: 1, at: '2026-09-28T12:00:00.000Z', sha256: 'a' },
+      design: { file: 'design.md', bytes: 1, at: '2026-09-28T12:10:00.000Z', sha256: 'b' },
+      plan: { file: 'plan.md', bytes: 1, at: '2026-09-28T12:20:00.000Z', sha256: 'c', companion: 'acceptance.md', companionSha256: 'd' },
+    }
+    writeFileSync(stateFile, `${JSON.stringify(state, null, 2)}\n`, 'utf8')
+    writeFileSync(join(root, 'tasks', FIXTURE_ID, 'plan.md'), '# 计划\n', 'utf8')
+    writeFileSync(join(root, 'tasks', FIXTURE_ID, 'acceptance.md'), '# 验收设计\n', 'utf8')
+
+    const res = await call(deps, `/fly/smart/task?id=${FIXTURE_ID}`)
+    assert.equal(res.status, 200)
+    assert.equal(res.json.workflow, 'optimized')
+    const board = res.json.board
+    // 板格仍在（产物要看得见），但那一格没有门、并标出并入了计划。
+    const acceptance = board.find(entry => entry.id === 'acceptance')
+    assert.equal(acceptance.gate, null)
+    assert.equal(acceptance.mergedInto, 'plan')
+    // G4 不该出现在任何一格上。
+    assert.equal(board.some(entry => entry.gate === 'G4'), false)
+    // 其余门原样。
+    assert.deepEqual(board.map(entry => entry.gate).filter(Boolean), ['G1', 'G2', 'G3', 'G5'])
+    // 一对产物都在，查看器两个页签都能拿到内容。
+    assert.equal(res.json.artifacts.plan.markdown.startsWith('# 计划'), true)
+    assert.equal(res.json.artifacts.acceptance.markdown.startsWith('# 验收设计'), true)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('a v1 task keeps the four-phase board with G4', async () => {
+  const root = plantRoot()
+  try {
+    const res = await call(makeDeps({ root }), `/fly/smart/task?id=${FIXTURE_ID}`)
+    assert.equal(res.json.workflow, 'v1')
+    assert.deepEqual(res.json.board.map(entry => entry.gate).filter(Boolean), ['G1', 'G2', 'G3', 'G4', 'G5'])
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})

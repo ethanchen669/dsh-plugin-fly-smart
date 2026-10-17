@@ -72,6 +72,23 @@ export const BOARD_PHASES = [
 ]
 
 /**
+ * optimized 任务的阶段板：验收设计与计划是**一对**（两文件一次写入、一道门），
+ * 所以没有独立的「验收设计」阶段，也没有 G4。板格仍保留那一位（产物要能看到），
+ * 但把它的门与状态交给 pair 表达 —— 否则面板会对一个永远不会发生的 G4 等下去。
+ */
+const OPTIMIZED_BOARD = BOARD_PHASES.map(entry => entry.id !== 'acceptance'
+  ? entry
+  : { id: entry.id, label: '验收设计（并入计划）', gate: null, mergedInto: 'plan' })
+
+/**
+ * 这个任务该画哪一套板。未知/缺省 ⇒ v1 的四阶段板（旧任务不受影响）。
+ * @param workflow - `state.workflow`（可能为 undefined）。
+ */
+export function boardFor(workflow) {
+  return workflow === 'optimized' ? OPTIMIZED_BOARD : BOARD_PHASES
+}
+
+/**
  * A task id as the state machine generates it (`<timestamp>-<slug>`). Also the
  * only shape allowed into a path: no `/`, and `..` is refused separately because
  * the pattern itself would let it through.
@@ -413,6 +430,9 @@ export function readTask(rootDir, id) {
     id,
     taskDir: dir,
     state,
+    // 面板不必自己猜工作流：reader 把"该画哪套板"一并发过来。
+    workflow: state.workflow ?? 'v1',
+    board: boardFor(state.workflow),
     artifacts,
     briefings: briefingReport(dir, state),
     consults,
