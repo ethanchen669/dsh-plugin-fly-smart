@@ -34,6 +34,7 @@ import {
   readState,
   recordArtifact,
   recordBriefing,
+  recordConsult,
   resolveConfig,
   taskStatus,
 } from '../lib/state.mjs'
@@ -210,21 +211,25 @@ test('an inline digest missing a section is refused (same completeness rule as r
 
 // ── 效率的可见度量：派生 spawn 估算 ─────────────────────────────────────────
 
-test('spawnEstimate counts what the task actually spent, and optimized brainstorm spends none', t => {
+test('spawnEstimate counts child calls, not briefing rounds (inline rounds are free)', t => {
   const root = scratch(t)
   const optimized = createTask(root, { title: 'spend-opt' }, { workflow: 'optimized' })
   recordArtifact(root, optimized.id, 'brainstorm', '# 脑暴')
   recordBriefing(root, optimized.id, 'brainstorm', { provider: null, model: null, source: 'brain/session', body: '结论 风险 未决' })
   confirmBriefing(root, optimized.id, 'brainstorm', 'confirm', {})
-  // brainstorm 只花了 1 次（brain 自写那一轮），没有 consult。
-  assert.deepEqual(taskStatus(root, optimized.id).spawns, { review: 1, hand: 0, total: 1 })
+  // 回归（2026-10-13）：早先这里把"轮次"当"调用"数，于是 brain 自写的那一轮被算成 1 次
+  // review 调用 —— 正好抹掉这套优化要证明的东西。现在 inline 单独报，total 只数真起的 child。
+  assert.deepEqual(taskStatus(root, optimized.id).spawns, { review: 0, hand: 0, inline: 1, total: 0 })
 
   const v1 = createTask(root, { title: 'spend-v1' })
   recordArtifact(root, v1.id, 'brainstorm', '# 脑暴')
   recordBriefing(root, v1.id, 'brainstorm', { provider: 'stub', model: 'review', source: 'preset', body: '结论 风险 未决' })
   confirmBriefing(root, v1.id, 'brainstorm', 'confirm', {})
-  // v1 同一阶段：1 briefing + 1 consult（consult 后总数 2）。
-  assert.equal(taskStatus(root, v1.id).spawns.total, 1)
+  // v1 同一位置：review 起的那一轮就算 1 次。
+  assert.deepEqual(taskStatus(root, v1.id).spawns, { review: 1, hand: 0, inline: 0, total: 1 })
+  // consult 另起一次 child（这里用状态层记账，等价于一次 review 调用）。
+  recordConsult(root, v1.id, 'brainstorm', { provider: 'stub', model: 'review', body: '缺回滚点' })
+  assert.equal(taskStatus(root, v1.id).spawns.total, 2)
 })
 
 test('the discipline text names the ADR-lite contract and the optimized brainstorm', async t => {

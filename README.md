@@ -28,8 +28,9 @@ Fly **smart 工作流**的 **agent 平面**半边：阶段机（brainstorm → d
 - **来源必须如实**：`brain/session` 的轮没有 provider/model，状态与面板里的路由显示为空，
   不会伪装成独立评审。
 
-省了多少钱可以从磁盘算：`smart_status` 的 `spawns` 给出至今的子代理调用估算
-（briefing 轮 + consult + 取证 + 执行报告），不参与任何闸门判定。
+省了多少钱可以从磁盘算：`smart_status` 的 `spawns` 给出至今的**子代理调用**估算
+（review 要点轮 + consult + 取证 + 执行报告）；`inline` 单独报 brain 自写、没起 child 的轮次
+（optimized 的 brainstorm 就是 0 次调用 + 1 轮 inline）。它不参与任何闸门判定。
 
 ## 装 / 开发
 
