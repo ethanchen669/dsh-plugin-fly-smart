@@ -33,6 +33,31 @@ Fly **smart 工作流**的 **agent 平面**半边：阶段机（brainstorm → d
 （review 要点轮 + consult + 取证 + 执行报告）；`inline` 单独报 brain 自写、没起 child 的轮次
 （optimized 的 brainstorm 就是 0 次调用 + 1 轮 inline）。它不参与任何闸门判定。
 
+## 宿主契约（2026-10-20 修正：`subagents.start` 已经不在服务面上）
+
+0.1.3 在 DSH 0.2.x 上**跑不起来**：`subagents.start('spawn', …)` 报
+`subagents.start is not a function`。宿主把子代理接缝换成了
+
+```js
+const activation = await subagents.startActivation({
+  provider: 'spawn', label,
+  request: { prompt: [{ type: 'text', text }], parent, agentOptions },
+  signal, delivery: 'caller',          // caller：结果只回给调用方，不往父会话塞通知
+})
+const { output, stopReason } = await activation.result
+await activation.dispose()
+```
+
+0.1.4 起**两条都支持**：有 `startActivation` 走新面，没有就退回老的 `start`（插件会被装进
+别人的 profile，宿主版本不由我们决定）。
+
+**一处能力损失，如实记在这里**：新宿主的 `SubagentStartRequest` 里**没有 `toolFilter`**
+（它只剩在冷恢复的描述符里），所以"给孩子禁掉 `smart_*` 工具"这层约束**下发不了**。
+补偿控制改成**插件自守**：任何 `smart_*` 工具在子会话里调用一律拒绝
+（判据是 `session.header.origin === 'subagent'` 或 `delegationDepth > 0`）。
+`smart_verify` 的只读名单（禁 `write`/`edit`）同理只在老宿主生效 —— 新宿主上取证 child
+仍有写工具，这一点必须知道。
+
 ## 装 / 开发
 
 - 作为 preset 行：宿主仓（dsh-fly）的 `presets/fly/agent.cordis.yml` 里是 `name: dsh-plugin-fly-smart`；

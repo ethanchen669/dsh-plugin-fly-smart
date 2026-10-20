@@ -17,7 +17,7 @@ import { homedir, tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { readState, resolveConfig } from '../lib/state.mjs'
-import { BRIEF_CONFIRM, briefingText, GATE_PASS } from './seams.mjs'
+import { BRIEF_CONFIRM, briefingText, childService, GATE_PASS } from './seams.mjs'
 
 const packageRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -37,8 +37,7 @@ async function load(config) {
     systemPrompt: { section: () => () => {} },
     commands: { register: () => () => {} },
     get: name => ({
-      subagents: {
-        start: async (provider, request) => {
+      subagents: childService(async (provider, request) => {
           calls.start += 1
           return {
             id: `child-${calls.start}`,
@@ -48,9 +47,8 @@ async function load(config) {
               stopReason: 'completed',
             }),
             dispose: async () => {},
-          }
-        },
-      },
+        }
+      }),
       userQuestions: {
         ask: async question => {
           calls.ask += 1

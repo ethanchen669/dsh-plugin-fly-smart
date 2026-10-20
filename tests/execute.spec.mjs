@@ -18,7 +18,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { readArtifact, readState } from '../lib/state.mjs'
-import { BRIEF_CONFIRM, briefingText, GATE_PASS } from './seams.mjs'
+import { BRIEF_CONFIRM, briefingText, childService, GATE_PASS, legacyChildService } from './seams.mjs'
 
 const packageRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
 let loadCount = 0
@@ -50,7 +50,7 @@ function handRun(text, calls, request) {
 /** Spawns whose label says which tool asked (auto-brief adds extra children). */
 const spawnsOf = (calls, prefix) => calls.start.filter(item => item.request.label.startsWith(prefix))
 
-async function load(config, output = '# 手模型产出\n- 步骤 1 ok', extraTools = {}) {
+async function load(config, output = '# 手模型产出\n- 步骤 1 ok', extraTools = {}, { legacy = false } = {}) {
   const mod = await import(`${pathToFileURL(join(packageRoot, 'tools', 'index.js')).href}?t=${++loadCount}`)
   const tools = new Map()
   const calls = { start: [], dispose: 0, ask: [] }
@@ -60,15 +60,14 @@ async function load(config, output = '# 手模型产出\n- 步骤 1 ok', extraTo
     commands: { register: () => () => {} },
     get: name => ({
       // briefing prompt ⇒ 完整合规的摘要；其它（execute/verify）⇒ 固定产出。
-      subagents: {
-        start: async (provider, request) => {
-          calls.start.push({ provider, request })
-          const text = request.prompt[0].text.includes('briefing')
-            ? briefingText(request.prompt[0].text)
-            : output
-          return handRun(text, calls, request)
-        },
-      },
+      // legacy: true ⇒ 只给老面（start），用来验 toolFilter 那段"新宿主已不接收"的逻辑。
+      subagents: (legacy ? legacyChildService : childService)(async (provider, request) => {
+        calls.start.push({ provider, request })
+        const text = request.prompt[0].text.includes('briefing')
+          ? briefingText(request.prompt[0].text)
+          : output
+        return handRun(text, calls, request)
+      }),
       userQuestions: {
         ask: async question => {
           calls.ask.push(question)
@@ -122,12 +121,11 @@ test('smart_execute runs the pinned hand route and records the report', async t 
   const started = spawnsOf(calls, 'smart execute').at(-1)
   assert.equal(started.provider, 'spawn')
   assert.deepEqual(started.request.agentOptions, HAND)
-  // 执行子代理不该拿到工作流工具（它不能自己把门关了）。
-  assert.ok(started.request.toolFilter.deny.includes('smart_gate'))
-  // 但它拿到的是"会话同权"的干活能力：白名单里不砍 bash/read/write/edit。
-  for (const capability of ['bash', 'read', 'write', 'edit']) {
-    assert.ok(!started.request.toolFilter.deny.includes(capability), `${capability} must stay available to the executor`)
-  }
+  // 新宿主的 startActivation 请求里**没有** toolFilter（0.2.x 起就不收这个字段了），
+  // 所以"孩子不能拿到工作流工具"改由两处保证：
+  //   ① 老宿主：toolFilter 照旧下发（见下面那条 legacy 用例）；
+  //   ② 新宿主：插件自守 —— 子会话调用任何 smart 工具一律拒绝（见 execute.spec 末条）。
+  assert.equal(started.request.toolFilter, undefined, 'the current host does not accept per-child toolFilter')
   const prompt = started.request.prompt[0].text
   assert.match(prompt, /--- plan\.md ---/u)
   assert.match(prompt, /--- acceptance\.md/u)
@@ -146,7 +144,8 @@ test('smart_execute runs the pinned hand route and records the report', async t 
 
 test('evidence gathering is read-only in code and lands as a file', async t => {
   const rootDir = scratch(t)
-  const { tools, calls } = await load({ rootDir, handRoute: HAND, requireConsult: false, maxRework: 3 }, '# 证据\n- 验收项 A：PASS，`ls -l x`')
+  // 取证只读名单只在**接受 toolFilter 的老面**上可验（新宿主的请求类型没有这个字段）。
+  const { tools, calls } = await load({ rootDir, handRoute: HAND, requireConsult: false, maxRework: 3 }, '# 证据\n- 验收项 A：PASS，`ls -l x`', {}, { legacy: true })
   const session = {}
   const taskId = await approveDesign(tools, session)
   await assert.rejects(call(tools, 'smart_verify', {}, session), /evidence is gathered in the review phase/u)
@@ -177,7 +176,7 @@ test('the read-only list converges to what this deployment actually has', async 
   // 名字**直接抛错**，于是 `smart_verify` 在那种部署上第一步就死。收敛后只剩本部署真有的名字。
   const rootDir = scratch(t)
   const known = new Set(['read', 'bash', 'grep', 'write', 'edit', 'subagent_fork', ...['smart_begin', 'smart_artifact', 'smart_consult', 'smart_decide', 'smart_gate', 'smart_execute', 'smart_verify', 'smart_rework', 'smart_finish', 'smart_brief', 'smart_brief_confirm']])
-  const { tools, calls } = await load({ rootDir, handRoute: HAND, requireConsult: false, maxRework: 3 }, undefined, { view: () => ({ restrictableNames: known }) })
+  const { tools, calls } = await load({ rootDir, handRoute: HAND, requireConsult: false, maxRework: 3 }, undefined, { view: () => ({ restrictableNames: known }) }, { legacy: true })
   const session = {}
   await approveDesign(tools, session)
   await call(tools, 'smart_execute', {}, session)
@@ -196,7 +195,7 @@ test('an untrustworthy view falls back to the full list instead of denying nothi
   // 视图里连 `write` 都没有 ⇒ 这个视图不可信（不是"本部署没有 write 工具"）⇒ 退回全名单。
   // 反面：若这里收敛成 `deny: []`，证据面就悄悄变成可写了。
   const rootDir = scratch(t)
-  const { tools, calls } = await load({ rootDir, handRoute: HAND, requireConsult: false, maxRework: 3 }, undefined, { view: () => ({ restrictableNames: new Set(['bash']) }) })
+  const { tools, calls } = await load({ rootDir, handRoute: HAND, requireConsult: false, maxRework: 3 }, undefined, { view: () => ({ restrictableNames: new Set(['bash']) }) }, { legacy: true })
   const session = {}
   await approveDesign(tools, session)
   await call(tools, 'smart_execute', {}, session)

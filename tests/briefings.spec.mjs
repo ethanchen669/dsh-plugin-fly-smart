@@ -36,7 +36,7 @@ import {
   taskStatus,
   writeState,
 } from '../lib/state.mjs'
-import { BRIEF_CONFIRM, briefingText, GATE_PASS, reviewReply } from './seams.mjs'
+import { BRIEF_CONFIRM, briefingText, childService, GATE_PASS, reviewReply } from './seams.mjs'
 
 const packageRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
 let loadCount = 0
@@ -56,21 +56,19 @@ async function load(config, seams = {}) {
   const calls = { start: [], dispose: 0, ask: [], reply: [] }
   const services = {
     subagents: seams.subagents === undefined
-      ? {
-          start: async (provider, request) => {
+      ? childService(async (provider, request) => {
             calls.start.push({ provider, request })
             const text = typeof seams.output === 'function'
               ? seams.output(request)
               : (seams.output ?? reviewReply(request))
-            calls.reply.push(text)
-            return {
-              id: `child-${calls.start.length}`,
-              localAgent: undefined,
-              result: Promise.resolve({ output: [{ type: 'text', text }], stopReason: 'completed' }),
-              dispose: async () => { calls.dispose += 1 },
-            }
-          },
+        calls.reply.push(text)
+        return {
+          id: `child-${calls.start.length}`,
+          localAgent: undefined,
+          result: Promise.resolve({ output: [{ type: 'text', text }], stopReason: 'completed' }),
+          dispose: async () => { calls.dispose += 1 },
         }
+      })
       : seams.subagents,
     userQuestions: seams.userQuestions === undefined
       ? {

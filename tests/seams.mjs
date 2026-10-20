@@ -101,3 +101,40 @@ export function defaultChoose(card) {
 export async function confirmBrief(tool, call, session, taskId) {
   return call(tool, 'smart_brief_confirm', taskId === undefined ? {} : { taskId }, session)
 }
+
+/**
+ * 把「老的 start(name, request)」桩包装成**当前宿主的两条面**：`startActivation` 与 `start`。
+ *
+ * 为什么必须这样：2026-10-20 现场报 `subagents.start is not a function` —— 宿主已换成
+ * `startActivation({provider,label,request,signal,delivery})`。老桩只提供 `start`，于是整套
+ * 测试都在测一条真机上不存在的路（"桩必须与真接缝同形"那条纪律的又一次发作）。
+ *
+ * 新面把 `request` 里的 prompt/parent/agentOptions 原样交出，并把句柄映射成
+ * `{ childId, result, dispose }`；调用方只关心"起了几个孩子、各自拿到什么提示"。
+ *
+ * @param startFn - `(provider, request) => handle`（老的桩形状）。
+ * @returns 同时提供 `startActivation` 与 `start` 的服务桩。
+ */
+export function childService(startFn) {
+  return {
+    start: startFn,
+    startActivation: async spec => {
+      const handle = await startFn(spec.provider, {
+        ...spec.request,
+        label: spec.label,
+        signal: spec.signal,
+      })
+      return { childId: handle.id ?? 'child', result: handle.result, dispose: handle.dispose ?? (async () => {}) }
+    },
+  }
+}
+
+/**
+ * **只有老面**的服务桩：模拟 0.1.x 宿主（`start(name, request)`）。
+ *
+ * 留着它是因为 `toolFilter` 仍然只在老面生效 —— 新宿主的 `SubagentStartRequest`
+ * 里没有这个字段。想验"禁哪些工具"的逻辑，就必须在**会接受它**的那条路上验。
+ */
+export function legacyChildService(startFn) {
+  return { start: startFn }
+}

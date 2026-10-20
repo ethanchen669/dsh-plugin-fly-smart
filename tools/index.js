@@ -186,8 +186,18 @@ export function apply(ctx, rawConfig = {}) {
    */
   const activeTasks = new WeakMap()
 
-  const assertEnabled = () => {
+  const assertEnabled = exec => {
     if (!config.enabled) throw new Error('smart: smart mode is disabled for this row (set `enabled: true` in the fly-smart config)')
+    // **子代理不许驱动工作流**（2026-10-20 补）：老宿主靠给孩子的 toolFilter 禁掉 smart_*，
+    // 而 0.2.x 的 `startActivation` 请求里**没有** toolFilter 这个字段（只剩在冷恢复的描述符里），
+    // 于是这层约束必须由插件自己守 —— 否则执行子代理能把门关了、把产物改了。
+    // 判据用会话自己的血缘字段（不是"看起来像孩子"）：`origin === 'subagent'` 或 delegationDepth > 0。
+    const header = exec?.agent?.session?.header
+    const isChild = header?.origin === 'subagent'
+      || (typeof header?.delegationDepth === 'number' && header.delegationDepth > 0)
+    if (isChild) {
+      throw new Error('smart: this session is a subagent child — the workflow tools belong to the top-level session, not to a delegated child (the host no longer restricts a child\'s tool list, so the plugin refuses here)')
+    }
   }
 
   /** Resolve the task a call refers to: explicit argument, else this session's. */
@@ -302,27 +312,62 @@ export function apply(ctx, rawConfig = {}) {
    * 代理（localAgent），序列化摸它 toJSON 直接炸 `cannot get property "toJSON" without
    * inject`；单测的 mock 一直返回 `{ output }`（与真契约不符），所以从没暴露。
    */
+  /**
+   * 起一个子代理并等它跑完。
+   *
+   * **宿主契约在 0.2.x 换过一次**（2026-10-20 现场：`subagents.start is not a function`）：
+   * 现在是 `startActivation({ provider, label, request, signal, delivery })`，返回
+   * `{ childId, result, dispose }`；老的 `start(name, request)` 已从服务面上消失。
+   * 两条都留着：新宿主走 startActivation，老宿主走 start（plugin 会被装到别人的 profile 里，
+   * 版本不由我们决定）。
+   *
+   * **代价要如实说**：新请求类型 `SubagentStartRequest` 里**没有** `toolFilter`（它只剩在
+   * 冷恢复的描述符里）。所以新宿主上孩子**拿不到**「禁掉 smart_* 工具」这层约束 —— 这条
+   * 写在 README 的已知限制里，不再假装它还生效。
+   */
+  const startChild = async (exec, { label, prompt, agentOptions, toolFilter }) => {
+    const subagents = service('subagents', 'subagent registry')
+    if (typeof subagents.startActivation === 'function') {
+      const activation = await subagents.startActivation({
+        provider: 'spawn',
+        label,
+        request: {
+          prompt: [{ type: 'text', text: prompt }],
+          parent: exec.agent,
+          ...agentOptions === undefined ? {} : { agentOptions },
+        },
+        signal: exec.signal,
+        // caller：只把结果交回调用方，不往父会话塞一条通知 —— 工具调用要的是同步结果。
+        delivery: 'caller',
+      })
+      try {
+        return await activation.result
+      } finally {
+        try { await activation.dispose() } catch { /* 释放失败不顶替结果判定 */ }
+      }
+    }
+    // 老宿主（0.1.x）：start(name, request) → run 句柄。
+    const run = await subagents.start('spawn', {
+      label,
+      prompt: [{ type: 'text', text: prompt }],
+      parent: exec.agent,
+      ...agentOptions === undefined ? {} : { agentOptions },
+      ...toolFilter === undefined ? {} : { toolFilter },
+      signal: exec.signal,
+    })
+    try {
+      return await run.result
+    } finally {
+      try { await run.dispose() } catch { /* disposal failure is not the caller's verdict */ }
+    }
+  }
+
   const runHand = async (exec, { label, prompt, toolFilter, role = 'hand' }) => {
     // 每次调用现读（懒读）：页面保存的新路由必须在下一次 spawn 就生效。
     // `source`（preset/session/default/*-fallback）随结果带出：review 路由回落 hand 时，
     // 记录要如实标注 fallback，不能让"谁真的看了这份稿子"变成猜（acceptance B5）。
     const { route, source } = role === 'review' ? reviewRouteOf(exec) : handRouteOf(exec)
-    const subagents = service('subagents', 'subagent registry')
-    const run = await subagents.start('spawn', {
-      label,
-      prompt: [{ type: 'text', text: prompt }],
-      parent: exec.agent,
-      agentOptions: route,
-      ...toolFilter === undefined ? {} : { toolFilter },
-      signal: exec.signal,
-    })
-    let result
-    try {
-      result = await run.result
-    } finally {
-      // 释放失败不吞结果：正文还在 result 里，先还孩子再谈清理。
-      try { await run.dispose() } catch { /* disposal failure is not the caller's verdict */ }
-    }
+    const result = await startChild(exec, { label, prompt, agentOptions: route, toolFilter })
     if (result?.stopReason !== 'completed') {
       const detail = result?.diagnostic === undefined ? '' : `: ${result.diagnostic}`
       throw new Error(`smart: the hand model run "${label}" ended as "${result?.stopReason ?? 'no result'}"${detail}`)
@@ -566,7 +611,7 @@ export function apply(ctx, rawConfig = {}) {
     },
     output: textOutput,
     async execute(args, exec) {
-      assertEnabled()
+      assertEnabled(exec)
       exec.signal?.throwIfAborted?.()
       // 任务根按**本次调用**解析：preset 行（显式 allowGlobalRoot）→ 本会话工作区
       // （session.header.cwd）→ legacy。绝不用 process.cwd()：宿主 cwd 不是用户工作区。
@@ -609,7 +654,7 @@ export function apply(ctx, rawConfig = {}) {
     },
     output: textOutput,
     async execute(args, exec) {
-      assertEnabled()
+      assertEnabled(exec)
       exec.signal?.throwIfAborted?.()
       const id = pickTaskId(exec, args)
       const rootDir = taskRootOf(id, exec)
@@ -700,7 +745,7 @@ export function apply(ctx, rawConfig = {}) {
     },
     output: textOutput,
     async execute(args, exec) {
-      assertEnabled()
+      assertEnabled(exec)
       exec.signal?.throwIfAborted?.()
       const id = pickTaskId(exec, args)
       const rootDir = taskRootOf(id, exec)
@@ -784,7 +829,7 @@ export function apply(ctx, rawConfig = {}) {
     },
     output: textOutput,
     async execute(args, exec) {
-      assertEnabled()
+      assertEnabled(exec)
       exec.signal?.throwIfAborted?.()
       const id = pickTaskId(exec, args)
       const rootDir = taskRootOf(id, exec)
@@ -952,7 +997,7 @@ export function apply(ctx, rawConfig = {}) {
     },
     output: textOutput,
     async execute(args, exec) {
-      assertEnabled()
+      assertEnabled(exec)
       exec.signal?.throwIfAborted?.()
       const id = pickTaskId(exec, args)
       const rootDir = taskRootOf(id, exec)
@@ -980,7 +1025,7 @@ export function apply(ctx, rawConfig = {}) {
     },
     output: textOutput,
     async execute(args, exec) {
-      assertEnabled()
+      assertEnabled(exec)
       exec.signal?.throwIfAborted?.()
       const id = pickTaskId(exec, args)
       const rootDir = taskRootOf(id, exec)
@@ -1052,7 +1097,7 @@ export function apply(ctx, rawConfig = {}) {
     },
     output: textOutput,
     async execute(args, exec) {
-      assertEnabled()
+      assertEnabled(exec)
       exec.signal?.throwIfAborted?.()
       const id = pickTaskId(exec, args)
       const rootDir = taskRootOf(id, exec)
@@ -1169,7 +1214,7 @@ export function apply(ctx, rawConfig = {}) {
     },
     output: textOutput,
     async execute(args, exec) {
-      assertEnabled()
+      assertEnabled(exec)
       exec.signal?.throwIfAborted?.()
       const id = pickTaskId(exec, args)
       const rootDir = taskRootOf(id, exec)
@@ -1220,7 +1265,7 @@ export function apply(ctx, rawConfig = {}) {
     },
     output: textOutput,
     async execute(args, exec) {
-      assertEnabled()
+      assertEnabled(exec)
       exec.signal?.throwIfAborted?.()
       const id = pickTaskId(exec, args)
       const rootDir = taskRootOf(id, exec)
@@ -1252,7 +1297,7 @@ export function apply(ctx, rawConfig = {}) {
     },
     output: textOutput,
     async execute(args, exec) {
-      assertEnabled()
+      assertEnabled(exec)
       exec.signal?.throwIfAborted?.()
       const id = pickTaskId(exec, args)
       const rootDir = taskRootOf(id, exec)
@@ -1273,7 +1318,7 @@ export function apply(ctx, rawConfig = {}) {
     },
     output: textOutput,
     async execute(args, exec) {
-      assertEnabled()
+      assertEnabled(exec)
       exec.signal?.throwIfAborted?.()
       const id = pickTaskId(exec, args)
       const rootDir = taskRootOf(id, exec)
@@ -1305,7 +1350,7 @@ export function apply(ctx, rawConfig = {}) {
     },
     output: textOutput,
     async execute(args, exec) {
-      assertEnabled()
+      assertEnabled(exec)
       exec.signal?.throwIfAborted?.()
       const { roots, primary } = candidateTaskRoots({ config, env: process.env, session: exec?.agent?.session })
       let id

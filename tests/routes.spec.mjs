@@ -24,6 +24,7 @@
  */
 
 import assert from 'node:assert/strict'
+import { childService } from './seams.mjs'
 import { test } from 'node:test'
 import './scratch-home.mjs'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
@@ -106,7 +107,7 @@ async function load(config) {
     systemPrompt: { section: () => () => {} },
     commands: { register: () => () => {} },
     get: name => ({
-      subagents: { start: async (provider, request) => { calls.start.push({ provider, request }); return handRun('# 评审', calls) } },
+      subagents: childService(async (provider, request) => { calls.start.push({ provider, request }); return handRun('# 评审', calls) }),
       userQuestions: { ask: async question => { calls.ask.push(question); return { answers: [{ id: question.questions[0].id, selected: ['通过，进入下一阶段'] }] } } },
     })[name],
   }

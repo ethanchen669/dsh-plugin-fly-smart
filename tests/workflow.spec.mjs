@@ -40,7 +40,7 @@ import {
   resolveConfig,
   taskStatus,
 } from '../lib/state.mjs'
-import { BRIEF_CONFIRM, GATE_PASS, reviewReply } from './seams.mjs'
+import { BRIEF_CONFIRM, childService, GATE_PASS, reviewReply } from './seams.mjs'
 
 const packageRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
 let loadCount = 0
@@ -59,8 +59,7 @@ async function load(config, { output } = {}) {
   const tools = new Map()
   const calls = { start: [], ask: [] }
   const services = {
-    subagents: {
-      start: async (provider, request) => {
+    subagents: childService(async (provider, request) => {
         calls.start.push({ provider, request })
         const text = typeof output === 'function' ? output(request) : reviewReply(request)
         return {
@@ -68,9 +67,8 @@ async function load(config, { output } = {}) {
           localAgent: undefined,
           result: Promise.resolve({ output: [{ type: 'text', text }], stopReason: 'completed' }),
           dispose: async () => {},
-        }
-      },
-    },
+      }
+    }),
     userQuestions: {
       ask: async question => {
         calls.ask.push(question)
@@ -483,4 +481,21 @@ test('rework from an optimized task archives plan.md and its acceptance companio
   const history = readdirSync(join(dir, 'history'))
   assert.equal(history.some(name => name.endsWith('-plan.md')), true)
   assert.equal(history.some(name => name.endsWith('-acceptance.md')), true)
+})
+
+// ── 新宿主的补偿控制：子会话不能驱动工作流 ──────────────────────────────────
+
+test('a subagent child cannot drive the workflow (the current host no longer restricts its tools)', async t => {
+  const rootDir = scratch(t)
+  const { tools } = await load({ rootDir })
+  // 子会话自报血缘（真实字段：SessionHeader.origin / delegationDepth）。
+  const child = { header: { origin: 'subagent', delegationDepth: 1 } }
+  await assert.rejects(call(tools, 'smart_begin', { title: 'nope' }, child), /subagent child/u)
+  await assert.rejects(call(tools, 'smart_status', {}, child), /subagent child/u)
+  // 只带 depth 的也算（老日志里 origin 可能缺）。
+  await assert.rejects(call(tools, 'smart_begin', { title: 'nope' }, { header: { delegationDepth: 2 } }), /subagent child/u)
+  // 顶层会话照常（用户 fork 出来的会话 parentSession 有值、但 origin 不是 subagent）。
+  const top = { header: { parentSession: 'sess-parent', delegationDepth: 0 } }
+  const begun = JSON.parse(await call(tools, 'smart_begin', { title: 'top level' }, top))
+  assert.equal(typeof begun.taskId, 'string')
 })

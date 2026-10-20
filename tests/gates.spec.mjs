@@ -19,7 +19,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { readConsult, readState, reworkBudget } from '../lib/state.mjs'
-import { BRIEF_CONFIRM, GATE_PASS, reviewReply } from './seams.mjs'
+import { BRIEF_CONFIRM, childService, GATE_PASS, reviewReply } from './seams.mjs'
 
 const packageRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
 let loadCount = 0
@@ -79,7 +79,7 @@ async function load(config, seams = {}) {
   const calls = { start: [], dispose: 0, ask: [] }
   const services = {
     subagents: seams.subagents === undefined
-      ? { start: async (provider, request) => { calls.start.push({ provider, request }); return handRun(reviewReply, calls) } }
+      ? childService(async (provider, request) => { calls.start.push({ provider, request }); return handRun(reviewReply, calls) })
       : seams.subagents,
     userQuestions: seams.userQuestions === undefined
       ? {
