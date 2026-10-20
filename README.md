@@ -70,14 +70,20 @@ await activation.dispose()
 - **宿主侧集成验收**（起 scratch profile、`dsh plugin add`、preset 行、真跑阶段机 47 条）在
   **dsh-fly** 仓的 `scripts/verify-smart-integration.mjs` —— 那验的是"宿主怎么接这个包"，属宿主仓。
 
-## 发布（tag → OIDC + provenance）
+## 发布（tag → OIDC）
 
 升 `version` → 提交 → 打**注释 tag** → 推 tag ⇒ `.github/workflows/release.yml` 自动
-`npm publish --access public --provenance`（不需要 token、不需要 2FA）。前提是 npm 上这个包的
+`npm publish --access public`（不需要 token、不需要 2FA）。前提是 npm 上这个包的
 Settings → Trusted Publisher 配好（GitHub Actions / `ethanchen669` / `dsh-plugin-fly-smart` /
 workflow filename `release.yml` / ☑ **Allow npm publish**）。
 
 - **0.1.0 是历史遗留**：那时包还在 dsh-fly 的 `packages/` 里、用 `npm stage publish` 发的（无 provenance，
   且 `repository` 指向 dsh-fly）。**0.1.1 起**从本仓走 tag 发布。
+- **暂时不带 `--provenance`**（2026-10-20 裁决）：npm 要求 provenance 的 `repository` 指向
+  **public** 仓库，而本仓是私有的 ⇒ 带 flag 会在最后一步必然失败（历史实证：0.1.0–0.1.3 的
+  `dist.attestations` 全为 `None`）。仓库转 public 那天把 workflow 里那行改回
+  `npm publish --access public --provenance` 即可，注释里写着同样的话。
 - 重推同一个 tag **不会**重跑 workflow ⇒ 要重跑就换一个新 tag。
-- 验收三件（**换缓存键**再读）：`dist-tags.latest == 新版本`、`dist.attestations` 存在、README 是本版快照。
+- 验收（**换缓存键**再读）：`dist-tags.latest == 新版本`（`/-/package/<name>/dist-tags` 与
+  packument 各读一次）、`dist.tarball` 拉下来确认修复代码在里面、README 是本版快照；
+  转 public 之后再加一条 `dist.attestations` 存在。

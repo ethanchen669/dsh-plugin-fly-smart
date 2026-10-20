@@ -42,5 +42,13 @@ jobs:
         run: |
           npm install -g npm@11
           npm --version
-      - name: 发布到公开 npm（OIDC + provenance）
-        run: npm publish --access public --provenance
+      # **故意不带 --provenance**（2026-10-20 裁决）：npm 的 provenance 要求在 package.json 里配置
+      # **public** 仓库且与发布来源逐字一致，而本仓目前是**私有仓**（个人试用阶段）⇒ 带 flag 必然
+      # 在最后一步失败，这条 tag 触发线等于常年红。实证：0.1.0/0.1.2/0.1.3 的 dist.attestations 全是
+      # None，全是本机 `npm publish` 发的，CI 从来没成功发过任何一版。
+      #
+      # 恢复条件（写死在这里，免得靠记忆）：仓库转 public 后，把下面这行改回
+      #   run: npm publish --access public --provenance
+      # 并重跑一次（重推同一个 tag 不会触发，见 README）。
+      - name: 发布到公开 npm（OIDC；provenance 待仓库转 public）
+        run: npm publish --access public
