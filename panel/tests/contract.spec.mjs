@@ -214,15 +214,37 @@ test('the host row claims the /fly/smart namespace and publishes its service', a
   try {
     const host = await import(pathToFileURL(HOST_ENTRY).href)
     assert.equal(host.name, 'fly-smart-panel')
-    assert.deepEqual(host.inject, ['webServer'])
+    assert.deepEqual(host.inject, ['webServer', 'skills'])
 
     const registered = []
     const provided = []
+    // 桩要和真 cordis **同形**：`skills.registerProvider(create)` 收一个造 provider 的工厂。
+    // 不给这个座位 = apply 抛 = 整棵 preset 被拒，那正是 inject 声明的语义。
+    const skillProviders = []
     host.apply({
       provide: (serviceName, value) => provided.push([serviceName, value]),
       effect: callback => callback(),
       webServer: { register: options => { registered.push(options); return () => {} } },
+      skills: { registerProvider: create => skillProviders.push(create()) },
     }, { rootDir: root })
+
+    // 自带技能真的被登记：7 个移植技能一个不能少，且每个都带 description
+    //（技能目录只看 description —— 缺了 = 用户搜不到 = 本次移植白做）。
+    assert.equal(skillProviders.length, 1)
+    assert.equal(skillProviders[0].name, 'fly-smart')
+    const skills = await skillProviders[0].list()
+    const expected = ['smart-debug', 'smart-plan', 'smart-review-receive', 'smart-skills', 'smart-tdd', 'smart-verify-claim', 'smart-worktree']
+    assert.deepEqual(skills.map(entry => entry.name).sort(), expected)
+    for (const entry of skills) {
+      assert.equal(typeof entry.description, 'string')
+      assert.ok(entry.description.length > 0, `${entry.name} 缺 description`)
+      assert.equal(entry.provider, 'fly-smart')
+      assert.equal(entry.source, 'bundled')
+    }
+    // 内容能取回，且 frontmatter 已剥掉（正文才被喂给模型）。
+    const body = await skillProviders[0].get(skills.find(entry => entry.name === 'smart-skills'), {})
+    assert.ok(body.content.length > 0)
+    assert.equal(body.content.startsWith('---'), false, 'frontmatter 必须剥掉')
 
     assert.equal(registered.length, 1)
     assert.equal(registered[0].kind, 'prefix')

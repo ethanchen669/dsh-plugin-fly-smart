@@ -45,9 +45,11 @@
  * @module dsh-plugin-fly-smart-panel
  */
 
-import { existsSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { isAbsolute, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { BUNDLED_SKILL_RANK } from '@deepseek-ai/dsh-skill'
 import z from '@deepseek-ai/schemastery'
 import { ID_PATTERN, isSafeTaskId, readIndex, readTask } from './panel/reader.js'
 import {
@@ -74,8 +76,8 @@ export { MIRROR_PATH_ENV, MIRROR_VERSION, ROUTE_MIRROR_FILE, isValidSessionId, m
 /** Cordis plugin name, matched by the bundle patch's row `name`. */
 export const name = 'fly-smart-panel'
 
-/** The Web carrier is this row's only Host dependency. */
-export const inject = ['webServer']
+/** Host dependencies: the Web carrier, plus `skills` (this row ships bundled skills). */
+export const inject = ['webServer', 'skills']
 
 /** Route namespace this workbench owns. */
 export const FLY_SMART_PATH = '/fly/smart'
@@ -695,6 +697,71 @@ export async function answerSmartRequest(deps, req, res) {
  * @param ctx - the Host plugin context.
  * @param rawConfig - the row's `config` object (`{ rootDir, brainRoute, handRoute }`).
  */
+// ─────────────────────────────────────────────────────────────────────────────
+// bundled skills（移植自 obra/superpowers，见 THIRD_PARTY_NOTICES.md）
+//
+// 技能放在**宿主平面**这一行：它们的价值是**零 smart 任务就能用** —— 修个 bug、
+// 写段测试、声称完成，这些不需要开工作流。形状照 `dsh-plugin-fly-blackbox`：
+// 注册一个 skill provider，从包内 `assets/<name>/` 读，别名即目录名。
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** `assets/` 的绝对路径（打包版走真实路径，不是 SEA）。 */
+const ASSETS_ROOT = fileURLToPath(new URL('./assets/', import.meta.url))
+
+/** frontmatter 里必须有的两个键：`name` 与 `description`（技能目录只看 description）。 */
+function skillFrontmatter(raw, path) {
+  const block = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/u.exec(raw)
+  if (block?.[1] === undefined) throw new Error(`fly-smart: ${path} has no YAML frontmatter`)
+  const name = /^name:\s*(.+)$/mu.exec(block[1])?.[1]?.trim()
+  const description = /^description:\s*(.+)$/mu.exec(block[1])?.[1]?.trim()
+  if (name === undefined || name === '') throw new Error(`fly-smart: ${path} has no name`)
+  if (description === undefined || description === '') throw new Error(`fly-smart: ${path} has no description`)
+  return { name, description, content: raw.slice(block[0].length).trim() }
+}
+
+/**
+ * Every bundled skill, listed once at startup.
+ *
+ * A missing or malformed `SKILL.md` throws here rather than silently dropping the
+ * skill: "the skill is not in the catalog" is the exact failure the plugin exists
+ * to prevent, and it must be loud.
+ */
+function bundledSkills() {
+  const entries = readdirSync(ASSETS_ROOT, { withFileTypes: true })
+    .filter(entry => entry.isDirectory())
+    .map(entry => entry.name)
+    .sort()
+  return entries.map(dirName => {
+    const base = join(ASSETS_ROOT, dirName)
+    const locator = join(base, 'SKILL.md')
+    const raw = readFileSync(locator, 'utf8')
+    const { name, description } = skillFrontmatter(raw, locator)
+    return {
+      name,
+      description,
+      invocation: { modelInvocable: true, userInvocable: true },
+      provider: 'fly-smart',
+      source: 'bundled',
+      rank: BUNDLED_SKILL_RANK,
+      resourceBase: { kind: 'directory', path: base },
+      locator,
+    }
+  })
+}
+
+function smartSkillProvider() {
+  const skills = bundledSkills()
+  return {
+    name: 'fly-smart',
+    list: () => Promise.resolve(skills),
+    async get(requested, options) {
+      const { rank: _rank, locator: file, ...summary } = requested
+      const raw = readFileSync(file, { encoding: 'utf8', signal: options?.signal })
+      return { ...summary, content: skillFrontmatter(raw, file).content }
+    },
+  }
+}
+
 export function apply(ctx, rawConfig = {}) {
   const env = process.env
   const mirrorPath = resolveMirrorPath(env)
@@ -760,6 +827,11 @@ export function apply(ctx, rawConfig = {}) {
       }
     },
   }
+
+  // 自带技能：零 smart 任务即可用（修 bug / 写测试 / 声称完成都不必开工作流）。
+  // **故意在注册时就展开全部技能**：少一个 SKILL.md 或 frontmatter 缺键 ⇒ 抛，
+  // 而不是静默少一个技能 —— 「技能不在目录里」正是本插件要防的失败形状。
+  ctx.skills.registerProvider(() => smartSkillProvider())
 
   ctx.effect(
     () => ctx.webServer.register({

@@ -617,6 +617,7 @@ test('a boxed row handRoute reaches the mirror at mount, not just the reader', a
     provide: () => {},
     effect: callback => callback(),
     webServer: { register: options => { registered.push(options); return () => {} } },
+    skills: { registerProvider: () => {} },
   }, { handRoute: { get: () => 'llm-mioffice/deepseek/deepseek-flash' } })
 
   assert.equal(registered.length, 1)
