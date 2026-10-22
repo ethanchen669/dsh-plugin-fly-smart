@@ -641,7 +641,7 @@ export function apply(ctx, rawConfig = {}) {
         description: 'Which artifact: brainstorm | design | plan | acceptance | executing (execution report) | reviewing (review).',
         enum: ['brainstorm', 'design', 'plan', 'acceptance', 'executing', 'reviewing'],
       },
-      markdown: { type: 'string', description: 'The full artifact body, markdown.' },
+      markdown: { type: 'string', description: 'The full artifact body, markdown. Per-phase content contract, **enforced at write time** (not only at the gate): brainstorm is a decision table (problem / candidates / current lean / open questions); design is an ADR-lite section; **plan.md must carry the document contract** — an "**Interfaces:**" block in EVERY task (with `Consumes` / `Produces` signatures), a "## Global Constraints" section (the project-wide rules the spec fixes, copied verbatim), and a "## Review Focus" section (the input classes the spec implies but no task exercises). Missing any of these and the write is refused with the list. See the `smart-plan` skill.' },
       acceptanceMarkdown: {
         type: 'string',
         description: 'Required for `phase: "plan"` under the optimized workflow: the acceptance design. The two files are written together and reviewed by one child, so this phase replaces the separate acceptance gate. Leave it out everywhere else.',

@@ -406,25 +406,47 @@ async function reachPlan(tools, session) {
   return taskId
 }
 
-test('G3 refuses a plan without the document contract, and says what to add', async t => {
+test('a plan without the document contract is refused at write time, not after briefing+consult', async t => {
+  // **写入处就挡**：等 G3 才撞墙 = 白花 briefing + consult 两轮子代理调用。
+  const rootDir = scratch(t)
+  const { tools, calls } = await load({ rootDir, handRoute: HAND, brainRoute: BRAIN })
+  const session = {}
+  await reachPlan(tools, session)
+  const before = calls.start.length
+
+  const err = await call(tools, 'smart_artifact', {
+    phase: 'plan',
+    markdown: '# 计划\n## 步骤\n- [ ] a\n## 回滚点',
+  }, session).then(() => null, error => error)
+  assert.ok(err !== null, '契约不齐的 plan.md 必须被拒')
+  for (const want of ['Global Constraints', 'Review Focus', 'Interfaces']) {
+    assert.match(err.message, new RegExp(want, 'u'), `拒绝文案要点名 ${want}：${err.message}`)
+  }
+  // 一分钱子代理都不该花：写入被拒 ⇒ 没有 briefing、没有 consult。
+  assert.equal(calls.start.length, before, '写入被拒后不该派任何 child')
+})
+
+test('the gate still catches a contract-less plan.md that reached the disk by other means', async t => {
+  // defense in depth：盘上的文件也可能被人手改过（或旧任务遗留）。门上那道仍在。
   const rootDir = scratch(t)
   const { tools } = await load({ rootDir, handRoute: HAND, brainRoute: BRAIN })
   const session = {}
   await reachPlan(tools, session)
-  // 裸计划（只有分组步骤与回滚点）—— 契约三块全缺。
-  await call(tools, 'smart_artifact', { phase: 'plan', markdown: '# 计划\n## 步骤\n- [ ] a\n## 回滚点' }, session)
+  // 先按契约正常落盘（写入校验过），确认 briefing、派 consult —— 然后**带外把文件改坏**。
+  // 这模拟的是"盘上的文件被人手改过 / 老任务遗留"：state 记着产物在、briefing 已确认，
+  // 但内容已经不是那份带契约的稿子。
+  await call(tools, 'smart_artifact', { phase: 'plan', markdown: PLAN_DRAFT }, session)
   await call(tools, 'smart_brief_confirm', {}, session)
   await call(tools, 'smart_consult', {}, session)
+  const taskId = JSON.parse(await call(tools, 'smart_status', {}, session)).id
+  const { writeFileSync } = await import('node:fs')
+  const { join } = await import('node:path')
+  writeFileSync(join(rootDir, 'tasks', taskId, 'plan.md'), '# 计划\n## 步骤\n')
 
-  // smart_gate 在缺口未清时**抛**（不是返回一句提示）—— 抛出来的文案就是给模型的下一步指引。
   const err = await call(tools, 'smart_gate', {}, session).then(() => null, error => error)
-  assert.ok(err !== null, '契约不齐时 G3 必须拒绝')
-  for (const want of ['Global Constraints', 'Review Focus', 'Interfaces']) {
-    assert.match(err.message, new RegExp(want, 'u'), `拒绝文案要点名 ${want}：${err.message}`)
-  }
-  // status.gaps 也逐条列出，模型不必回翻。
+  assert.match(err.message, /lacks/u, `门必须兜住带外改写：${err?.message}`)
   const status = JSON.parse(await call(tools, 'smart_status', {}, session))
-  assert.ok(status.gaps.some(gap => gap.includes('Global Constraints')), status.gaps.join(' | '))
+  assert.equal(status.gaps.every(gap => gap.includes('plan.md')), true, status.gaps.join(' | '))
 })
 
 test('a contract-complete plan opens G3', async t => {
@@ -445,14 +467,14 @@ test('the plan contract binds v1 too, and only plan.md carries it', async t => {
   const { tools } = await load({ rootDir, handRoute: HAND, brainRoute: BRAIN })
   const session = {}
   await reachPlan(tools, session)
-  await call(tools, 'smart_artifact', { phase: 'plan', markdown: '# 计划' }, session)
-  await call(tools, 'smart_brief_confirm', {}, session)
-  await call(tools, 'smart_consult', {}, session)
-  const err = await call(tools, 'smart_gate', {}, session).then(() => null, error => error)
-  assert.match(err.message, /lacks/u)
+  const err = await call(tools, 'smart_artifact', { phase: 'plan', markdown: '# 计划' }, session).then(() => null, error => error)
+  assert.match(err.message, /document contract/u, 'v1 同样受契约约束')
 
   // 只有 plan.md 背这个契约：design.md 不需要 Interfaces（它不是给实现者照着走的那张图）。
+  // 拒绝文案里点名的全是 plan.md 自己的事 —— 不牵连别的产物。
+  assert.equal(err.message.includes('design.md'), false, err.message)
+  assert.match(err.message, /plan\.md/u)
+  // 写入被拒 ⇒ 门根本没开（不是"门开着但缺契约"）：一步退回，不白花 briefing/consult。
   const status = JSON.parse(await call(tools, 'smart_status', {}, session))
-  assert.equal(status.gaps.length > 0, true)
-  assert.equal(status.gaps.every(gap => gap.includes('plan.md')), true, status.gaps.join(' | '))
+  assert.equal(status.awaitingGate, null)
 })
