@@ -62,7 +62,7 @@ NO FIXES WITHOUT ROOT CAUSE INVESTIGATION FIRST
 
 2. **稳定复现（Reproduce Consistently）**
    - 能可靠触发吗？精确步骤是什么？每次都发生吗？
-   - 如果不能复现 → 继续收集数据，不要猜
+   - 如果不能复现 → 继续收集数据，不要猜；复现跑在后台（`bash` 长任务）时用 `job_list` / `job_output` 把结果收回来再分析
 
 3. **检查最近的改动（Check Recent Changes）**
    - 什么改动可能导致这个？（`bash` 跑 `git diff` / `git log`）
@@ -150,11 +150,11 @@ NO FIXES WITHOUT ROOT CAUSE INVESTIGATION FIRST
 **修根因，不修症状：**
 
 1. **先造失败的测试用例（Create Failing Test Case）**
-   - 最简单的复现；能自动化就自动化；没有框架就写一次性脚本
+   - 最简单的复现；能自动化就自动化（`write` 写一次性测试脚本也算）；没有框架就写一次性脚本
    - **修之前必须先有它**
 
 2. **实施单一修复（Implement Single Fix）**
-   - 只处理已确认的根因，一次一个改动
+   - 只处理已确认的根因，一次一个改动（用 `edit` 做最小修改）
    - 不要"顺手也改改"，不要夹带重构
 
 3. **验证修复（Verify Fix）**
