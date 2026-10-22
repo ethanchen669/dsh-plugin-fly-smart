@@ -19,7 +19,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { readConsult, readState, reworkBudget } from '../lib/state.mjs'
-import { BRIEF_CONFIRM, childService, GATE_PASS, reviewReply } from './seams.mjs'
+import { BRIEF_CONFIRM, childService, GATE_PASS, reviewReply, PLAN_DRAFT } from './seams.mjs'
 
 const packageRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
 let loadCount = 0
@@ -336,7 +336,7 @@ test('at G5 the acceptance-failure option returns to the plan (it used to throw 
   // 每个产物落盘后都要确认 briefing 才开得了门（自动 briefing 的卡也进 asked）。
   for (const next of ['design', 'plan', 'acceptance']) {
     await call(tools, 'smart_gate', {}, session)
-    await call(tools, 'smart_artifact', { phase: next, markdown: `# ${next}` }, session)
+    await call(tools, 'smart_artifact', { phase: next, markdown: next === 'plan' ? PLAN_DRAFT : `# ${next}` }, session)
     await call(tools, 'smart_brief_confirm', {}, session)
   }
   await call(tools, 'smart_gate', {}, session)
@@ -371,7 +371,7 @@ test('the full design walk passes four gates and hands over to execution', async
     const out = JSON.parse(await call(tools, 'smart_gate', {}, session))
     phases.push(out.nextPhase)
     if (index < 3) {
-      await call(tools, 'smart_artifact', { phase: phases.at(-1), markdown: `# ${phases.at(-1)}` }, session)
+      await call(tools, 'smart_artifact', { phase: phases.at(-1), markdown: phases.at(-1) === 'plan' ? PLAN_DRAFT : `# ${phases.at(-1)}` }, session)
       await call(tools, 'smart_brief_confirm', {}, session)
     }
   }
@@ -390,4 +390,69 @@ test('the full design walk passes four gates and hands over to execution', async
   assert.equal(done.nextPhase, 'done')
   assert.equal(gateCards(calls.ask).length, 5)
   assert.equal(readState(rootDir, done.taskId).phase, 'done')
+})
+
+// ── S2：计划文档契约是 G3 的硬要求 ────────────────────────────────────────────
+
+/** 一路走到 G2 过后（相位 = plan），返回 taskId。 */
+async function reachPlan(tools, session) {
+  const taskId = await seed(tools, session)
+  await call(tools, 'smart_consult', {}, session)
+  await call(tools, 'smart_gate', {}, session)                  // G1 → design
+  await call(tools, 'smart_artifact', { phase: 'design', markdown: '# 设计' }, session)
+  await call(tools, 'smart_brief_confirm', {}, session)
+  await call(tools, 'smart_consult', {}, session)
+  await call(tools, 'smart_gate', {}, session)                  // G2 → plan
+  return taskId
+}
+
+test('G3 refuses a plan without the document contract, and says what to add', async t => {
+  const rootDir = scratch(t)
+  const { tools } = await load({ rootDir, handRoute: HAND, brainRoute: BRAIN })
+  const session = {}
+  await reachPlan(tools, session)
+  // 裸计划（只有分组步骤与回滚点）—— 契约三块全缺。
+  await call(tools, 'smart_artifact', { phase: 'plan', markdown: '# 计划\n## 步骤\n- [ ] a\n## 回滚点' }, session)
+  await call(tools, 'smart_brief_confirm', {}, session)
+  await call(tools, 'smart_consult', {}, session)
+
+  // smart_gate 在缺口未清时**抛**（不是返回一句提示）—— 抛出来的文案就是给模型的下一步指引。
+  const err = await call(tools, 'smart_gate', {}, session).then(() => null, error => error)
+  assert.ok(err !== null, '契约不齐时 G3 必须拒绝')
+  for (const want of ['Global Constraints', 'Review Focus', 'Interfaces']) {
+    assert.match(err.message, new RegExp(want, 'u'), `拒绝文案要点名 ${want}：${err.message}`)
+  }
+  // status.gaps 也逐条列出，模型不必回翻。
+  const status = JSON.parse(await call(tools, 'smart_status', {}, session))
+  assert.ok(status.gaps.some(gap => gap.includes('Global Constraints')), status.gaps.join(' | '))
+})
+
+test('a contract-complete plan opens G3', async t => {
+  const rootDir = scratch(t)
+  const { tools } = await load({ rootDir, handRoute: HAND, brainRoute: BRAIN })
+  const session = {}
+  await reachPlan(tools, session)
+  await call(tools, 'smart_artifact', { phase: 'plan', markdown: PLAN_DRAFT }, session)
+  await call(tools, 'smart_brief_confirm', {}, session)
+  await call(tools, 'smart_consult', {}, session)
+  const out = JSON.parse(await call(tools, 'smart_gate', {}, session))
+  assert.equal(out.gate, 'G3')
+})
+
+test('the plan contract binds v1 too, and only plan.md carries it', async t => {
+  // 契约是计划质量的地板，**不随工作流版本放宽**（v1 与 optimized 同判据）。
+  const rootDir = scratch(t)
+  const { tools } = await load({ rootDir, handRoute: HAND, brainRoute: BRAIN })
+  const session = {}
+  await reachPlan(tools, session)
+  await call(tools, 'smart_artifact', { phase: 'plan', markdown: '# 计划' }, session)
+  await call(tools, 'smart_brief_confirm', {}, session)
+  await call(tools, 'smart_consult', {}, session)
+  const err = await call(tools, 'smart_gate', {}, session).then(() => null, error => error)
+  assert.match(err.message, /lacks/u)
+
+  // 只有 plan.md 背这个契约：design.md 不需要 Interfaces（它不是给实现者照着走的那张图）。
+  const status = JSON.parse(await call(tools, 'smart_status', {}, session))
+  assert.equal(status.gaps.length > 0, true)
+  assert.equal(status.gaps.every(gap => gap.includes('plan.md')), true, status.gaps.join(' | '))
 })

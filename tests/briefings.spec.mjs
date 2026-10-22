@@ -36,7 +36,7 @@ import {
   taskStatus,
   writeState,
 } from '../lib/state.mjs'
-import { BRIEF_CONFIRM, briefingText, childService, GATE_PASS, reviewReply } from './seams.mjs'
+import { BRIEF_CONFIRM, briefingText, childService, GATE_PASS, reviewReply, PLAN_DRAFT } from './seams.mjs'
 
 const packageRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
 let loadCount = 0
@@ -269,7 +269,7 @@ test('executing confirmation moves the task to review; reviewing confirmation op
   const begun = JSON.parse(await call(tools, 'smart_begin', { title: 'two gates' }, session))
   const id = begun.taskId
   for (const phase of ['brainstorm', 'design', 'plan', 'acceptance']) {
-    await call(tools, 'smart_artifact', { phase, markdown: `# ${phase}` }, session)
+    await call(tools, 'smart_artifact', { phase, markdown: phase === 'plan' ? PLAN_DRAFT : `# ${phase}` }, session)
     await call(tools, 'smart_brief_confirm', {}, session)
     await call(tools, 'smart_gate', {}, session)
   }

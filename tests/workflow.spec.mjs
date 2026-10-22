@@ -40,7 +40,7 @@ import {
   resolveConfig,
   taskStatus,
 } from '../lib/state.mjs'
-import { BRIEF_CONFIRM, childService, GATE_PASS, reviewReply } from './seams.mjs'
+import { BRIEF_CONFIRM, childService, GATE_PASS, reviewReply, PLAN_DRAFT } from './seams.mjs'
 
 const packageRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
 let loadCount = 0
@@ -310,7 +310,7 @@ test('optimized plan records plan.md and acceptance.md together, and G3 hands ov
 
   const paired = JSON.parse(await call(tools, 'smart_artifact', {
     phase: 'plan',
-    markdown: '# 计划\n\n## 1. 步骤',
+    markdown: PLAN_DRAFT,
     acceptanceMarkdown: '# 验收设计\n\n## A1 检查',
   }, session))
   assert.equal(paired.pairedWith, 'acceptance.md')
@@ -346,7 +346,7 @@ test('a pair with an empty half writes neither file', async t => {
   await call(tools, 'smart_brief_confirm', {}, session)
   await call(tools, 'smart_gate', {}, session)
   await assert.rejects(
-    call(tools, 'smart_artifact', { phase: 'plan', markdown: '# 计划', acceptanceMarkdown: '   ' }, session),
+    call(tools, 'smart_artifact', { phase: 'plan', markdown: PLAN_DRAFT, acceptanceMarkdown: '   ' }, session),
     /acceptanceMarkdown|acceptance body must be non-empty/u,
   )
   // 一份都没落盘 —— 不能留"计划写了、验收没写"的中间态。
@@ -361,7 +361,7 @@ test('optimized v1-untouched: standard tasks still walk plan → acceptance → 
   const session = {}
   await call(tools, 'smart_begin', { title: 'v1 walk' }, session)
   for (const phase of ['brainstorm', 'design', 'plan']) {
-    await call(tools, 'smart_artifact', { phase, markdown: `# ${phase}` }, session)
+    await call(tools, 'smart_artifact', { phase, markdown: phase === 'plan' ? PLAN_DRAFT : `# ${phase}` }, session)
     await call(tools, 'smart_brief_confirm', {}, session)
     await call(tools, 'smart_consult', {}, session)
     await call(tools, 'smart_gate', {}, session)
@@ -463,7 +463,7 @@ test('rework from an optimized task archives plan.md and its acceptance companio
   await call(tools, 'smart_artifact', { phase: 'design', markdown: '# 设计' }, session)
   await call(tools, 'smart_brief_confirm', {}, session)
   await call(tools, 'smart_gate', {}, session)
-  await call(tools, 'smart_artifact', { phase: 'plan', markdown: '# 计划', acceptanceMarkdown: '# 验收' }, session)
+  await call(tools, 'smart_artifact', { phase: 'plan', markdown: PLAN_DRAFT, acceptanceMarkdown: '# 验收' }, session)
   await call(tools, 'smart_brief_confirm', {}, session)
   await call(tools, 'smart_gate', {}, session)
   await call(tools, 'smart_execute', {}, session)

@@ -11,6 +11,7 @@
 
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
+import { PLAN_DRAFT } from './seams.mjs'
 import './scratch-home.mjs'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
@@ -51,6 +52,7 @@ import {
   taskDir,
   taskStatus,
   writeState,
+  planContractGaps,
 } from '../lib/state.mjs'
 
 /** Scratch root outside the repo, removed when the test ends. */
@@ -204,7 +206,7 @@ test('the whole design walk needs four gates and four consults', t => {
   const { id } = createTask(root, { title: 'walk' })
   const seen = []
   for (const [index, phase] of DESIGN_PHASES.entries()) {
-    recordArtifact(root, id, phase, `# ${phase}`)
+    recordArtifact(root, id, phase, phase === 'plan' ? PLAN_DRAFT : `# ${phase}`)
     assert.equal(readState(root, id).awaitingGate, null)
     assert.equal(brief(root, id, phase).awaitingGate, `G${index + 1}`)
     consult(root, id, phase)
@@ -281,7 +283,7 @@ test('G5 needs both the execution report and the review', t => {
   const root = scratch(t)
   const { id } = createTask(root, { title: 'walk' })
   for (const [index, phase] of DESIGN_PHASES.entries()) {
-    recordArtifact(root, id, phase, `# ${phase}`)
+    recordArtifact(root, id, phase, phase === 'plan' ? PLAN_DRAFT : `# ${phase}`)
     brief(root, id, phase)
     consult(root, id, phase)
     passGate(root, id, `G${index + 1}`, {}, { requireConsult: true })
@@ -306,7 +308,7 @@ test('G5 reports the artifact that is still missing', t => {
   const root = scratch(t)
   const { id } = createTask(root, { title: 'walk' })
   for (const [index, phase] of DESIGN_PHASES.entries()) {
-    recordArtifact(root, id, phase, `# ${phase}`)
+    recordArtifact(root, id, phase, phase === 'plan' ? PLAN_DRAFT : `# ${phase}`)
     brief(root, id, phase)
     passGate(root, id, `G${index + 1}`, {}, { requireConsult: false })
   }
@@ -357,7 +359,7 @@ test('taskStatus reports evidence, rework history and archive state', t => {
   const root = scratch(t)
   const { id } = createTask(root, { title: 'status depth' })
   for (const [index, phase] of DESIGN_PHASES.entries()) {
-    recordArtifact(root, id, phase, `# ${phase}`)
+    recordArtifact(root, id, phase, phase === 'plan' ? PLAN_DRAFT : `# ${phase}`)
     brief(root, id, phase)
     passGate(root, id, `G${index + 1}`, {}, { requireConsult: false })
   }
@@ -383,7 +385,7 @@ test('taskStatus reports evidence, rework history and archive state', t => {
 
   // 归档是终态的一部分，必须在状态里可见。
   for (const phase of ['plan', 'acceptance']) {
-    recordArtifact(root, id, phase, `# ${phase}`)
+    recordArtifact(root, id, phase, phase === 'plan' ? PLAN_DRAFT : `# ${phase}`)
     brief(root, id, phase)
     passGate(root, id, GATE_AFTER[phase], {}, { requireConsult: false })
   }
@@ -423,7 +425,7 @@ test('taskStatus narrates the next required action', t => {
  */
 function walkToG5(root, id) {
   for (const [index, phase] of DESIGN_PHASES.entries()) {
-    recordArtifact(root, id, phase, `# ${phase}`)
+    recordArtifact(root, id, phase, phase === 'plan' ? PLAN_DRAFT : `# ${phase}`)
     brief(root, id, phase)
     passGate(root, id, `G${index + 1}`, {}, { requireConsult: false })
   }
@@ -577,4 +579,43 @@ test('a read-only delivery target keeps the task unarchived and is retryable', t
   assert.equal(typeof done.archivedAt, 'string')
   assert.equal(done.delivery.dir, join('docs', 'smart', id))
   assert.equal(existsSync(join(target, 'README.md')), true, 'the retry completes the promotion')
+})
+
+// ── 计划文档契约（S2）：Interfaces / Global Constraints / Review Focus ─────────
+
+test('planContractGaps names exactly what a plan.md is missing', t => {
+  // 空 / 只有分组步骤：三块全缺，逐条点名（模型只读消息就能补齐）。
+  assert.deepEqual(planContractGaps(''), ['plan.md is empty'])
+  const bare = planContractGaps('# 计划\n## 步骤\n- [ ] a\n## 回滚点')
+  assert.equal(bare.length, 5, `裸计划该报 5 项：${bare.join(' | ')}`)
+  for (const want of ['Global Constraints', 'Review Focus', 'Interfaces', 'Consumes', 'Produces']) {
+    assert.ok(bare.some(item => item.includes(want)), `缺口要点名 ${want}：${bare.join(' | ')}`)
+  }
+  // 齐全 ⇒ 不报。
+  assert.deepEqual(planContractGaps(PLAN_DRAFT), [])
+})
+
+test('Interfaces must appear once per task, not once per document', t => {
+  // 一个实现者只看得到自己的任务 —— 只在一处写 Interfaces 而有 3 个任务，
+  // 另外两个任务的实现者仍然不知道邻居的名字与类型。
+  const oneForThree = [
+    '# p', '## Global Constraints', '- x', '## Review Focus', '- y',
+    '### Task 1: a', '**Interfaces:**', '- Consumes: a', '- Produces: b',
+    '### Task 2: b', '### Task 3: c',
+  ].join('\n')
+  const gaps = planContractGaps(oneForThree)
+  assert.equal(gaps.length, 1, gaps.join(' | '))
+  assert.match(gaps[0], /found 1, need 3/u)
+  // 补齐两份就过。
+  const ok = oneForThree.replace('### Task 2: b', '### Task 2: b\n**Interfaces:**\n- Consumes: b\n- Produces: c')
+    .replace('### Task 3: c', '### Task 3: c\n**Interfaces:**\n- Consumes: c\n- Produces: d')
+  assert.deepEqual(planContractGaps(ok), [])
+})
+
+test('a fenced fake section does not count as the real one', t => {
+  // 代码块里的 `## Global Constraints` 不是小节（artifactSections 是 fence-aware）。
+  const fake = '# p\n```md\n## Global Constraints\n```\n## Review Focus\n### Task 1\n**Interfaces:**\n- Consumes: a\n- Produces: b'
+  const gaps = planContractGaps(fake)
+  assert.equal(gaps.length, 1, gaps.join(' | '))
+  assert.match(gaps[0], /Global Constraints/u)
 })

@@ -18,7 +18,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { readArtifact, readState } from '../lib/state.mjs'
-import { BRIEF_CONFIRM, briefingText, childService, GATE_PASS, legacyChildService } from './seams.mjs'
+import { BRIEF_CONFIRM, briefingText, childService, GATE_PASS, legacyChildService, PLAN_DRAFT } from './seams.mjs'
 
 const packageRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
 let loadCount = 0
@@ -89,7 +89,7 @@ const call = (tools, name, args, session) => tools.get(name).execute(args, exec(
 async function approveDesign(tools, session) {
   const begun = JSON.parse(await call(tools, 'smart_begin', { title: 'exec task', goal: 'make it real' }, session))
   for (const phase of ['brainstorm', 'design', 'plan', 'acceptance']) {
-    await call(tools, 'smart_artifact', { phase, markdown: `# ${phase}` }, session)
+    await call(tools, 'smart_artifact', { phase, markdown: phase === 'plan' ? PLAN_DRAFT : `# ${phase}` }, session)
     await call(tools, 'smart_brief_confirm', {}, session)
     await call(tools, 'smart_gate', {}, session)
   }

@@ -138,3 +138,41 @@ export function childService(startFn) {
 export function legacyChildService(startFn) {
   return { start: startFn }
 }
+
+/**
+ * 一份**符合计划文档契约**的 plan.md 草稿（`planContractGaps` 认的三块齐全）。
+ *
+ * 测试里凡是记录 plan 相位产物的地方都用它 —— 契约现在是 G3 的硬要求，用 `# plan`
+ * 这种裸标题会让一堆与契约无关的用例全红，而这正是"旧任务会被挡下"的那笔迁移成本。
+ * 放在这里而不是各处复制，是为了让**契约长什么样**在测试里只有一份答案。
+ */
+export const PLAN_DRAFT = [
+  '# 计划',
+  '',
+  '## Global Constraints',
+  '',
+  '- 版本下限：Node 22',
+  '- 命名规则：kebab-case',
+  '',
+  '## Review Focus',
+  '',
+  '- 空输入',
+  '- 并发写入',
+  '',
+  '### Task 1: 起步',
+  '',
+  '**Interfaces:**',
+  '- Consumes: 无',
+  '- Produces: `open(path) -> Handle`',
+  '',
+  '- [ ] Step 1: 写失败测试',
+  '- [ ] Step 2: 最小实现',
+  '',
+  '### Task 2: 收尾',
+  '',
+  '**Interfaces:**',
+  '- Consumes: `open(path) -> Handle`',
+  '- Produces: `close(handle) -> void`',
+  '',
+  '- [ ] Step 1: 写失败测试',
+].join('\n')
