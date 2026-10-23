@@ -499,3 +499,45 @@ test('a subagent child cannot drive the workflow (the current host no longer res
   const begun = JSON.parse(await call(tools, 'smart_begin', { title: 'top level' }, top))
   assert.equal(typeof begun.taskId, 'string')
 })
+
+// ── S3 收口：裁决必须在收尾总结里露面 ────────────────────────────────────────
+
+test('a task with rulings cannot close without the summary covering them', async t => {
+  const rootDir = scratch(t)
+  const { tools } = await load({ rootDir, workflow: 'optimized' })
+  const session = {}
+  const begun = JSON.parse(await call(tools, 'smart_begin', { title: '带裁决的任务' }, session))
+  const id = begun.taskId
+  await call(tools, 'smart_artifact', { phase: 'brainstorm', markdown: '# 脑暴', briefing: '结论 风险 未决' }, session)
+  await call(tools, 'smart_brief_confirm', {}, session)
+  await call(tools, 'smart_gate', {}, session)
+  await call(tools, 'smart_artifact', { phase: 'design', markdown: '# 设计' }, session)
+  await call(tools, 'smart_brief_confirm', {}, session)
+  await call(tools, 'smart_gate', {}, session)
+  await call(tools, 'smart_artifact', { phase: 'plan', markdown: PLAN_DRAFT, acceptanceMarkdown: '# 验收' }, session)
+  await call(tools, 'smart_brief_confirm', {}, session)
+  await call(tools, 'smart_gate', {}, session)
+  await call(tools, 'smart_execute', {}, session)
+  await call(tools, 'smart_brief_confirm', {}, session)
+  await call(tools, 'smart_verify', {}, session)
+  await call(tools, 'smart_artifact', { phase: 'reviewing', markdown: '# 验收结论' }, session)
+  await call(tools, 'smart_brief_confirm', {}, session)
+
+  // 记一条模型自主裁决（它替用户定的事）。
+  await call(tools, 'smart_ruling', { decision: '用 rename 而非 move', why: '跨设备 move 会丢权限位', costIfWrong: '权限位丢失，需手工重设' }, session)
+  await call(tools, 'smart_gate', {}, session)   // G5 过了才能收尾
+
+  // 收尾总结一个字不提裁决 ⇒ 拒绝，且点名要覆盖。
+  const workspace = mkdtempSync(join(tmpdir(), 'smart-ws-'))
+  const err = await call(tools, 'smart_finish', { summary: '做完了，一切正常。', workspace }, session).then(() => null, error => error)
+  assert.ok(err !== null, '有裁决却只字不提的收尾总结必须被拒')
+  assert.match(err.message, /ruling/iu)
+  assert.match(err.message, /what you decided/iu)
+
+  // 覆盖到就放行。
+  const ok = JSON.parse(await call(tools, 'smart_finish', {
+    workspace,
+    summary: '做完了。\n\n## 裁决\n- **用 rename 而非 move** — 跨设备 move 会丢权限位 — 若错，权限位丢失需手工重设。',
+  }, session))
+  assert.equal(ok.archived, true)
+})

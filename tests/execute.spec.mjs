@@ -175,7 +175,7 @@ test('the read-only list converges to what this deployment actually has', async 
   // `subagent_codex` / `subagent_claude_code` 不存在，而上游 `tools.restrict()` 对不存在的
   // 名字**直接抛错**，于是 `smart_verify` 在那种部署上第一步就死。收敛后只剩本部署真有的名字。
   const rootDir = scratch(t)
-  const known = new Set(['read', 'bash', 'grep', 'write', 'edit', 'subagent_fork', ...['smart_begin', 'smart_artifact', 'smart_consult', 'smart_decide', 'smart_gate', 'smart_execute', 'smart_verify', 'smart_rework', 'smart_finish', 'smart_brief', 'smart_brief_confirm']])
+  const known = new Set(['read', 'bash', 'grep', 'write', 'edit', 'subagent_fork', ...['smart_begin', 'smart_artifact', 'smart_consult', 'smart_decide', 'smart_ruling', 'smart_gate', 'smart_execute', 'smart_verify', 'smart_rework', 'smart_finish', 'smart_brief', 'smart_brief_confirm']])
   const { tools, calls } = await load({ rootDir, handRoute: HAND, requireConsult: false, maxRework: 3 }, undefined, { view: () => ({ restrictableNames: known }) }, { legacy: true })
   const session = {}
   await approveDesign(tools, session)
@@ -269,4 +269,70 @@ test('smart_finish only archives a task past G5, promotes the delivery copy, and
   await assert.rejects(call(bareTools, 'smart_finish', { summary: '# 收尾' }, bareSession), /无法归档.*header\.cwd|workspace/u)
   assert.equal(readState(bare, bareId).archivedAt, undefined, '提升失败/无工作区时不许标 archived')
   assert.equal(existsSync(join(process.cwd(), 'docs', 'smart', bareId)), false, '禁 process.cwd() 兜底')
+})
+
+// ── S3：派发上下文卫生 + hand 的裁决进 state ─────────────────────────────────
+
+test('the hand prompt carries the dispatch-hygiene contract, and the hand gets no history', async t => {
+  const rootDir = scratch(t)
+  const { tools, calls } = await load({ rootDir, handRoute: HAND, requireConsult: false, maxRework: 3 })
+  const session = {}
+  const taskId = await approveDesign(tools, session)
+  await call(tools, 'smart_execute', {}, session)
+
+  const started = spawnsOf(calls, 'smart execute').at(-1)
+  const prompt = started.request.prompt[0].text
+  // **不粘贴历史**：prompt 里只有 plan.md / acceptance.md 两段，没有设计对话。
+  assert.equal(prompt.includes('--- plan.md ---'), true)
+  assert.equal(prompt.includes('--- acceptance.md'), true)
+  assert.equal(prompt.includes('brainstorm'), false, 'hand 不该看到脑暴产物')
+  assert.equal(prompt.includes('smart_begin'), false, 'hand 不该看到工作流历史')
+  // **上下文卫生三条**：不自派子代理 / 产物走文件 / 遇缺陷自己定并记 Rulings。
+  // 大小写不敏感：共享常量是一份答案，五条 prompt 用它 —— 断言盯着**措辞**会因为
+  // 一处改大小写而红，那不是回归。
+  const lower = prompt.toLowerCase()
+  for (const want of ['do not dispatch subagents', 'put bulk output in files', '## rulings', 'do not stall']) {
+    assert.ok(lower.includes(want.toLowerCase()), `hand prompt 缺卫生契约「${want}」`)
+  }
+  // **只有四种理由停下来**（superpowers 的分流判据，抄过来避免 hand 动不动就等）。
+  assert.match(prompt, /Four things stop you/u)
+})
+
+test('hand rulings land in state.rulings and the return reports what was dropped', async t => {
+  const rootDir = scratch(t)
+  const report = [
+    '# 执行报告', '## 步骤', '- [x] a',
+    '## Rulings',
+    '- **用 rename 而非 move** — 跨设备 move 会丢权限位 — 权限位丢失需手工重设',
+    '- 三段缺两段',
+  ].join('\n')
+  const { tools } = await load({ rootDir, handRoute: HAND, requireConsult: false, maxRework: 3 }, report)
+  const session = {}
+  await approveDesign(tools, session)
+  const out = JSON.parse(await call(tools, 'smart_execute', {}, session))
+
+  assert.deepEqual(out.rulingsRecorded, { recorded: 1, skipped: 1 })
+  const status = JSON.parse(await call(tools, 'smart_status', {}, session))
+  const hand = status.rulings?.filter(entry => entry.by === 'hand') ?? []
+  assert.equal(hand.length, 1, JSON.stringify(status.rulings))
+  assert.equal(hand[0].decision, '用 rename 而非 move')
+})
+
+test('every dispatch prompt carries the hygiene contract — review children included', async t => {
+  // 评审 child 同样是派发：它若自派评审者、或把长输出贴回正文，就是 superpowers 记的
+  // 那次「一次派发 42k 字符、99% 是粘贴历史」的事故形状。四条 prompt 一个不许漏。
+  const rootDir = scratch(t)
+  const { tools, calls } = await load({ rootDir, handRoute: HAND, requireConsult: false, maxRework: 3 })
+  const session = {}
+  await approveDesign(tools, session)
+  await call(tools, 'smart_execute', {}, session)
+
+  assert.ok(calls.start.length > 0, '至少要派出过 child')
+  for (const [index, item] of calls.start.entries()) {
+    const prompt = item.request.prompt[0].text
+    for (const want of ['do not dispatch subagents', 'put bulk output in files']) {
+      assert.ok(prompt.toLowerCase().includes(want.toLowerCase()),
+        `第 ${index + 1} 个 child（${item.request.label}）的 prompt 缺卫生契约「${want}」`)
+    }
+  }
 })

@@ -63,7 +63,8 @@ import {
   finishTask,
   taskStatus,
   taskDir,
-} from '../lib/state.mjs'
+  recordRuling,
+  rulingsFromReport,} from '../lib/state.mjs'
 
 /** Cordis plugin name, matched by the preset row's `name`. */
 export const name = 'fly-smart'
@@ -262,7 +263,7 @@ export function apply(ctx, rawConfig = {}) {
     }
   }
 
-  const SMART_TOOL_NAMES = ['smart_begin', 'smart_artifact', 'smart_consult', 'smart_decide', 'smart_gate', 'smart_execute', 'smart_verify', 'smart_rework', 'smart_finish', 'smart_brief', 'smart_brief_confirm']
+  const SMART_TOOL_NAMES = ['smart_begin', 'smart_artifact', 'smart_consult', 'smart_decide', 'smart_ruling', 'smart_gate', 'smart_execute', 'smart_verify', 'smart_rework', 'smart_finish', 'smart_brief', 'smart_brief_confirm']
 
   /** Evidence gathering may inspect the world, never mutate it (design §5). */
   const VERIFY_TOOL_DENY = [...SMART_TOOL_NAMES, 'write', 'edit', 'subagent', 'subagent_fork', 'subagent_codex', 'subagent_claude_code']
@@ -382,6 +383,19 @@ export function apply(ctx, rawConfig = {}) {
    * will be walked through in conversation. Structure is pinned so the mechanical
    * completeness check (`missingBriefingSections`) has something to check against.
    */
+  /**
+   * 派发上下文卫生（一份答案，五条 prompt 共用）。
+   *
+   * 源自 superpowers 记的那次事故：*"一次真实派发 42k 字符，99% 是粘贴的历史"* ——
+   * 子代理的 prompt 与它回的正文都常驻父会话上下文、每轮重读。两条约束：
+   * ① 不自派子代理（评审是**你的活**，不是你雇的人）；② 大输出走文件，回正文只给结论与路径。
+   *
+   * 另有工具层兜底：子会话调用任何 `smart_*` 一律拒绝（`assertEnabled`）。
+   */
+  const DISPATCH_HYGIENE = [
+    'Working contract (how you work, not what you build): do not dispatch subagents — not helpers, not reviewers; review is your job, not someone you hire. Put bulk output in files, not in your reply: your reply is re-read on every later turn of the parent session, so report conclusions and the paths that prove them, not the transcripts themselves.',
+  ]
+
   const briefingPrompt = ({ state, phase, draft }) => [
     `You are the *review* model in a three-model workflow, writing a **briefing**: what the user needs to know about one phase artifact so the presenting model can walk them through it in plain conversation before their gate. The reader is the USER — a person deciding, not a model executing. Your own verdict belongs in the consult record, not here.`,
     '',
@@ -399,6 +413,7 @@ export function apply(ctx, rawConfig = {}) {
     '4. End with at most 3 questions the user should answer before confirming, phrased as questions to a person.',
     '',
     'Be specific and complete over long: the user decides from this and the conversation, not from the raw draft. No praise.',
+    ...DISPATCH_HYGIENE,
   ].filter(line => line !== '').join('\n')
 
   /** optimized：把 plan 与伴随 acceptance 拼成一份给 review 的正文。 */
@@ -440,6 +455,8 @@ export function apply(ctx, rawConfig = {}) {
     question === undefined || question.trim() === '' ? 'Your feasibility review for the model that will execute: blocking problems first, then concrete additions. Be specific.' : question.trim(),
     '',
     'Do not omit either marker. No praise, no restating the artifact.',
+    ...DISPATCH_HYGIENE,
+    '',
   ].filter(line => line !== '').join('\n')
 
   /** 解析两段；缺段/空段 ⇒ 抛错（调用方保证产物不动、可重试）。 */
@@ -469,6 +486,8 @@ export function apply(ctx, rawConfig = {}) {
     '',
     question === undefined || question.trim() === '' ? 'Review it: what is missing, wrong, or unexecutable? Be concrete.' : question.trim(),
     '',
+    ...DISPATCH_HYGIENE,
+    '',
     'Answer in markdown. Lead with blocking problems, then concrete additions. No praise, no restating the draft.',
   ].filter(line => line !== '').join('\n')
 
@@ -494,6 +513,12 @@ export function apply(ctx, rawConfig = {}) {
     '2. anything you had to deviate from, and why;',
     '3. what you did NOT do and what remains.',
     'Do not summarise the plan back at me, and do not claim success you did not observe.',
+    '',
+    'Working contract (these are about how you work, not what you build):',
+    ...DISPATCH_HYGIENE,
+    '- A worker-spawned reviewer is a duplicate seat reviewing the same diff — a defect to flag, not rigor. Review arrives after your report.',
+    '- **When the plan is wrong, decide and record, do not stall.** A plan defect, an ambiguity, a conflict with the spec — settle it yourself and keep going. Record each one under a `## Rulings` heading as `- **<what you decided>** — <why> — <what it costs if wrong>`. Three parts or it will be dropped. A wrong ruling is rework your human can see and undo; a session parked on a question costs their day and buys nothing.',
+    '- **Four things stop you, and only these:** an irreversible or destructive operation; a security-sensitive action; a side effect outside this worktree that norms say you ask about first; and a plan so broken that every path forward is a guess.',
   ].filter(line => line !== '').join('\n')
 
   /** The verifier's briefing: an adversarial check against the acceptance contract. */
@@ -506,6 +531,8 @@ export function apply(ctx, rawConfig = {}) {
     '--- acceptance.md (the contract) ---',
     acceptance.trimEnd(),
     '--- end acceptance ---',
+    '',
+    ...DISPATCH_HYGIENE,
     '',
     '--- execution report (what the executor claims) ---',
     report.trimEnd(),
@@ -540,7 +567,7 @@ export function apply(ctx, rawConfig = {}) {
     '1. Open the task with smart_begin, then work the design phases in order: brainstorm → design → plan → acceptance. Write each artifact with smart_artifact and stop at its gate. **plan.md carries a document contract the gate enforces** (see the `smart-plan` skill): every task block declares its own `**Interfaces:**` with `Consumes` / `Produces` signatures, the document has a `## Global Constraints` section (the project-wide rules the spec fixes, copied verbatim) and a `## Review Focus` section (the input classes the spec implies but no task exercises in its tests). Missing any of them, G3 will not open — that is the floor for "another model can execute this from these files alone". The artifact contract differs per phase: brainstorm is a **decision table** (problem / candidates / current lean / open questions) that is explicitly NOT yet approved; design turns the accepted choice into an **ADR-lite** section (context, options, decision and why, consequences, revisit trigger) — the decision record belongs where the choice is made, not in the phase that was still exploring.',
     '1b. Under the optimized workflow the brainstorm phase spawns no review child: you write its user-facing digest yourself and pass it as smart_artifact\'s `briefing` argument (provenance is recorded as brain/session, never as an independent review). Every later phase keeps the review route.',
     '2. Before every gate, call smart_consult so the review model audits that phase for execution feasibility. Reviews are cheap; discovering an unexecutable plan after execution is not.',
-    '3. Before a gate, settle what only the user can decide: put those questions to them with smart_decide (the same option card, recorded), fold the answers into the artifact as an 已裁决 section, and re-record it. A draft that still carries a 需要你裁决 section does not open its gate at all — the recommendation you wrote must not silently become their decision.',
+    '3. **Settle what you can decide yourself; put to the user only what only they can decide.** A plan defect, an ambiguity, a conflict with the spec — decide it, record it with `smart_ruling` (`Ruling: what — why — what it costs if wrong`, all three parts), and keep going. A session parked on a question costs the user their day and buys nothing; a wrong ruling is rework they can see and undo. Before a gate, settle what only the user can decide: put those questions to them with smart_decide (the same option card, recorded), fold the answers into the artifact as an 已裁决 section, and re-record it. A draft that still carries a 需要你裁决 section does not open its gate at all — the recommendation you wrote must not silently become their decision.',
     '4. After every artifact lands (including the execution report and the review), a briefing is generated for it (smart_artifact does this; smart_brief only retries a failed one). Walk the user through that briefing **in ordinary conversation** — the key points and the critical details, section by section — and leave room for their questions and requested changes. Discussing is not approving: nothing you say, and nothing they say in chat, opens anything.',
     '5. When the discussion settles, call smart_brief_confirm. It pops one short card and only that card\'s real answer opens the phase gate (or moves execution into review). If the user wants changes, they answer 需要修改 — re-record the artifact and the briefing regenerates; that loop costs no rework budget.',
     '6. Call smart_gate to put the gate to the user, with a short summary of the risks and open questions. The ask card renders that summary as its heading, and a page of it pushes the options off the card — keep it to a few lines (the tool truncates past 300 characters and says so), and put the long version in the artifact, which the panel can show. Never treat your own judgement, or a passing remark, as their approval — the gate records their actual answer.',
@@ -990,6 +1017,35 @@ export function apply(ctx, rawConfig = {}) {
   }
 
   ctx.tools.register(defineTool({
+    name: 'smart_ruling',
+    description: 'Record one model-side ruling: a plan defect, ambiguity, or spec conflict you settled yourself while working. Use this INSTEAD of stalling; use smart_decide instead when the question is one only the user can answer. Three parts are required — what you decided, why, and what it costs if it turns out wrong. Rulings are kept in state.rulings and reviewed at the end; they never open or close a gate.',
+    parameters: {
+      decision: { type: 'string', description: 'What you decided, in one line.' },
+      why: { type: 'string', description: 'The reasoning you decided it on.' },
+      costIfWrong: { type: 'string', description: 'What it costs if this turns out wrong — this is what makes the ruling reviewable later.' },
+      taskId: { type: 'string', description: 'Optional; defaults to the session\'s active task.' },
+    },
+    output: textOutput,
+    async execute(args, exec) {
+      assertEnabled(exec)
+      const id = pickTaskId(exec, args)
+      const rootDir = taskRootOf(id, exec)
+      const state = recordRuling(rootDir, id, {
+        decision: args.decision,
+        why: args.why,
+        costIfWrong: args.costIfWrong,
+        by: 'model',
+      })
+      return JSON.stringify({
+        recorded: true,
+        total: state.rulings.length,
+        ruling: state.rulings.at(-1),
+        nextStep: 'Keep going — a ruling is a decision you own, not a request for approval. Surface it in the briefing so the user sees what you decided.',
+      })
+    },
+  }))
+
+  ctx.tools.register(defineTool({
     name: 'smart_brief',
     description: 'Generate the briefing for the current phase\'s artifact with the review route: a section-complete digest the presenting model walks the user through in conversation. Normally this runs automatically when smart_artifact lands an artifact — use this tool only to retry a failed generation or to backfill an old task that has none. It never opens anything: only smart_brief_confirm\'s card answer does.',
     parameters: {
@@ -1237,6 +1293,12 @@ export function apply(ctx, rawConfig = {}) {
       })
       const report = `# 执行报告\n\n> 执行模型：${route.provider}/${route.model}\n\n${body.trim()}\n`
       const next = recordArtifact(rootDir, id, 'executing', report)
+      // hand 在执行中自己定下的裁决进 state.rulings（`## Rulings` 小节）：拆不出
+      // 「决定 — 为什么 — 错了代价」三段的整条丢弃并照实计数 —— 宁可少记，
+      // 不记不存在的裁决。
+      const { rulings: handRulings, skipped } = rulingsFromReport(report)
+      for (const ruling of handRulings) recordRuling(rootDir, id, { ...ruling, by: 'hand' })
+      const rulings = { recorded: handRulings.length, skipped }
       // 执行报告同样走 briefing 回路（G2 裁决①）：停在 executing，确认后才进 reviewing。
       let brief
       try {
@@ -1247,6 +1309,9 @@ export function apply(ctx, rawConfig = {}) {
       return summary(rootDir, id, {
         executed: true,
         executor: `${route.provider}/${route.model}`,
+        // 叫 rulingsRecorded 而不是 rulings：`summary()` 先铺 status（里面有 rulings 数组），
+        // 同名会把它遮蔽成计数 —— 同一个词在两处指两个东西，是给人添乱。
+        rulingsRecorded: rulings,
         nextPhase: next.phase,
         report: body,
         ...brief.briefingFailed === true
@@ -1330,7 +1395,15 @@ export function apply(ctx, rawConfig = {}) {
       const explicit = typeof args.workspace === 'string' && args.workspace.trim() !== '' ? args.workspace.trim() : null
       const workspace = explicit ?? (typeof state.workspace === 'string' && state.workspace !== '' ? state.workspace : where?.workspace ?? null)
       const workspaceSource = explicit !== null ? 'args.workspace' : state.workspace !== undefined ? 'state.workspace' : where?.workspaceSource ?? null
-      const next = finishTask(rootDir, id, args.summary ?? '', { workspace, workspaceSource })
+      // 收尾总结必须**覆盖模型自主裁决**：那是"我替你定的那些事"，用户只有在最后这份
+      // 文档里才看得全。判据刻意钝（同 briefing 完整性）：有裁决就要求正文里出现
+      // 「裁决」或 `Ruling` —— 一个词都看不见 = 这件事被悄悄吞了。
+      const rulings = Array.isArray(state.rulings) ? state.rulings : []
+      const closing = args.summary ?? ''
+      if (rulings.length > 0 && !/(裁决|Ruling)/iu.test(closing)) {
+        throw new Error(`smart: this task recorded ${rulings.length} model-side ruling(s), and the closing summary never mentions them — cover each one (what you decided, why, and what to watch for if it turns out wrong). They are decisions made on the user's behalf; the closing summary is the only place they all appear together.`)
+      }
+      const next = finishTask(rootDir, id, closing, { workspace, workspaceSource })
       const promotion = next._promotion
       return summary(rootDir, id, {
         archived: true,
@@ -1344,7 +1417,7 @@ export function apply(ctx, rawConfig = {}) {
 
   ctx.tools.register(defineTool({
     name: 'smart_status',
-    description: 'Read the smart-mode task state: current phase, recorded artifacts, open user gate, blocking gaps, and the next required action. Call it with no taskId when you need to find the active task, or after a failure to see what the machine expects.',
+    description: 'Includes `rulings` (model-side decisions recorded with `smart_ruling`, distinct from `decisions`, which record what the user chose). Read the smart-mode task state: current phase, recorded artifacts, open user gate, blocking gaps, and the next required action. Call it with no taskId when you need to find the active task, or after a failure to see what the machine expects.',
     parameters: {
       taskId: { type: 'string', description: 'Optional; defaults to the session\'s active task, then the most recently touched one.' },
     },

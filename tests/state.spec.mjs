@@ -53,6 +53,8 @@ import {
   taskStatus,
   writeState,
   planContractGaps,
+  recordRuling,
+  rulingsFromReport,
 } from '../lib/state.mjs'
 
 /** Scratch root outside the repo, removed when the test ends. */
@@ -618,4 +620,44 @@ test('a fenced fake section does not count as the real one', t => {
   const gaps = planContractGaps(fake)
   assert.equal(gaps.length, 1, gaps.join(' | '))
   assert.match(gaps[0], /Global Constraints/u)
+})
+
+// ── S3：模型自主裁决（Rulings）────────────────────────────────────────────────
+
+test('recordRuling refuses a ruling that cannot be reviewed later', t => {
+  const root = scratch(t)
+  const { id } = createTask(root, { title: '裁决' })
+  // 三段缺一不可：只写决定不写代价 ⇒ 事后没法判断该不该回滚。
+  for (const bad of [
+    { decision: '', why: 'x', costIfWrong: 'y' },
+    { decision: 'x', why: '', costIfWrong: 'y' },
+    { decision: 'x', why: 'y', costIfWrong: '' },
+  ]) {
+    assert.throws(() => recordRuling(root, id, bad), /needs/u, JSON.stringify(bad))
+  }
+  const state = recordRuling(root, id, { decision: '用 rename 而非 move', why: '跨设备 move 会丢权限位', costIfWrong: '权限位丢失，需手工重设' })
+  assert.equal(state.rulings.length, 1)
+  assert.equal(state.rulings[0].by, 'model')
+  assert.equal(state.rulings[0].phase, state.phase)
+  // hand 的裁决要如实标注来源。
+  const again = recordRuling(root, id, { decision: 'b', why: 'c', costIfWrong: 'd', by: 'hand' })
+  assert.equal(again.rulings.at(-1).by, 'hand')
+})
+
+test('rulingsFromReport keeps three-part rulings and drops the rest, counting what it dropped', t => {
+  const report = [
+    '# 执行报告', '',
+    '## 步骤', '- [x] a', '',
+    '## Rulings',
+    '- **用 rename 而非 move** — 跨设备 move 会丢权限位 — 权限位丢失需手工重设',
+    '- 只有决定没有别的',
+    '- **x** — y — z',
+    '## 遗留',
+  ].join('\n')
+  const { rulings, skipped } = rulingsFromReport(report)
+  assert.equal(rulings.length, 2, JSON.stringify(rulings))
+  assert.equal(skipped, 1, '拆不出三段的要照实计数（宁可少记，不记不存在的裁决）')
+  assert.equal(rulings[0].decision, '用 rename 而非 move')
+  // 没有 Rulings 小节 ⇒ 空手而归，不报错。
+  assert.deepEqual(rulingsFromReport('# 报告\n## 步骤'), { rulings: [], skipped: 0 })
 })

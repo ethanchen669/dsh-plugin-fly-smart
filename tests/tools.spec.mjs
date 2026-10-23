@@ -79,7 +79,7 @@ test('the plugin registers exactly its tool surface', async () => {
   // 按集合断：顺序不算契约，少一行则红。
   assert.deepEqual([...mod.inject].sort(), ['commands', 'systemPrompt', 'tools'])
   // S1 的三个 + S2 的评审与门。工具面就是工作流的全部入口，多一个少一个都要有人管。
-  assert.deepEqual([...tools.keys()], ['smart_begin', 'smart_artifact', 'smart_consult', 'smart_decide', 'smart_brief', 'smart_brief_confirm', 'smart_gate', 'smart_execute', 'smart_verify', 'smart_rework', 'smart_finish', 'smart_status'])
+  assert.deepEqual([...tools.keys()], ['smart_begin', 'smart_artifact', 'smart_consult', 'smart_decide', 'smart_ruling', 'smart_brief', 'smart_brief_confirm', 'smart_gate', 'smart_execute', 'smart_verify', 'smart_rework', 'smart_finish', 'smart_status'])
   // A4 的防伪造面：确认工具的 schema **不含** decision/confirm 类参数 —— 确认只能来自
   // 卡片应答。变异（把 decision 改成读参数）会被这条钉住。
   assert.deepEqual(Object.keys(tools.get('smart_brief_confirm').parameters.properties), ['taskId'])

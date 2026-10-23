@@ -191,6 +191,9 @@ function taskRow(source) {
     // 整个 state.json（只有 decisions 明细，条数在这里数）。
     pendingDecisions: source.pendingDecisions ?? null,
     decided: typeof source.decided === 'number' ? source.decided : countDecided(source.decisions),
+    // 模型自主裁决（Ruling:）条数：与「待裁决」是两件事 —— 一个是等用户答，一个是
+    // 模型替用户定过。索引行给数字，完整条目在任务详情里（`rulings`）。
+    rulings: typeof source.rulings === 'number' ? source.rulings : Array.isArray(source.rulings) ? source.rulings.length : 0,
     // 本阶段返工额度（index.json 由 lib/state.mjs 的 updateIndex 写好）：额度用尽的任务
     // 在下拉里就能认出来，不必逐个点开。
     //
@@ -437,6 +440,9 @@ export function readTask(rootDir, id) {
     briefings: briefingReport(dir, state),
     consults,
     verifications: readVerifications(dir, state),
+    // 模型自主裁决（Ruling:）：完整条目随任务详情下发 —— 这是「替用户定过的事」，
+    // 用户只有在这里（和收尾总结里）才看得全。
+    rulings: Array.isArray(state.rulings) ? state.rulings : [],
     gates: Array.isArray(state.gates) ? state.gates : [],
     history: readHistory(dir),
     summary: summary === null ? null : { file: 'summary.md', bytes: sizeOf(join(dir, 'summary.md')), markdown: summary },

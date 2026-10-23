@@ -469,6 +469,13 @@ function artifactOpenDecisions(task: TaskPayload): PendingDecisions | null {
 }
 
 /** The phase's pending decisions: the machine's own field when present, else read off the artifact. */
+/** 模型自主裁决条数（索引行给数字、详情里是数组，两种来源都收）。 */
+function rulingsCountOf(task: TaskPayload): number {
+  const rows = (task as unknown as { rulings?: unknown }).rulings
+  if (typeof rows === 'number') return rows
+  return Array.isArray(rows) ? rows.length : 0
+}
+
 function pendingDecisionsOf(task: TaskPayload): PendingDecisions | null {
   return task.state.pendingDecisions ?? artifactOpenDecisions(task)
 }
@@ -1217,6 +1224,11 @@ export function SmartPanel() {
                       <span className="fly-tag" data-phase-status={status}>{STATUS_LABEL[status]}</span>
                       {entry.id === task.state.phase && pendingDecisionsOf(task) != null
                         ? <span className="fly-tag" data-chip="decisions">{`待裁决 ${pendingDecisionsOf(task)?.items}`}</span>
+                        : null}
+                      {/* 模型自主裁决（Ruling:）：与「待裁决」是两件事 —— 一个等用户答、
+                          一个是模型替用户定过。并列不矛盾，但 data-chip 分开，便于分别配色。 */}
+                      {entry.id === task.state.phase && rulingsCountOf(task) > 0
+                        ? <span className="fly-tag" data-chip="rulings" title="模型替你定过的事，收尾总结里会逐条列">{`自裁 ${rulingsCountOf(task)}`}</span>
                         : null}
                       {entry.id === task.state.phase && reworkBudgetOf(task.state).used >= reworkBudgetOf(task.state).cap
                         ? <span className="fly-tag" data-chip="rework">{'额度用尽'}</span>

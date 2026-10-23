@@ -649,3 +649,33 @@ test('a v1 task keeps the four-phase board with G4', async () => {
     rmSync(root, { recursive: true, force: true })
   }
 })
+
+test('model rulings reach the page: a count on the row, the full entries in the task', async () => {
+  // 「替用户定过的事」只有在面板与收尾总结里看得见 —— reader 不下发就等于悄悄吞了。
+  const root = plantRoot()
+  try {
+    const stateFile = join(root, 'tasks', FIXTURE_ID, 'state.json')
+    const state = JSON.parse(readFileSync(stateFile, 'utf8'))
+    state.rulings = [
+      { at: '2026-09-28T12:00:00.000Z', phase: 'plan', decision: '用 rename 而非 move', why: '跨设备 move 会丢权限位', costIfWrong: '权限位丢失，需手工重设', by: 'model' },
+      { at: '2026-09-28T12:05:00.000Z', phase: 'executing', decision: '跳过可选步骤 B', why: '它依赖未合并的上游 PR', costIfWrong: '功能缺一半，需补做', by: 'hand' },
+    ]
+    writeFileSync(stateFile, `${JSON.stringify(state, null, 2)}\n`, 'utf8')
+
+    const detail = await call(makeDeps({ root }), `/fly/smart/task?id=${FIXTURE_ID}`)
+    assert.equal(detail.status, 200)
+    assert.equal(detail.json.rulings.length, 2, JSON.stringify(detail.json.rulings))
+    assert.equal(detail.json.rulings[0].decision, '用 rename 而非 move')
+    assert.equal(detail.json.rulings[1].by, 'hand')
+
+    // 任务列表（索引行）只带条数 —— 板格够用，完整条目在详情里。
+    // 这里删掉 index.json 走回退扫描：索引行由 `updateIndex` 写（真实路径是
+    // `writeState` 会刷新它），回退路径是从 state.json 自己数 —— 两条路都得对。
+    rmSync(join(root, 'index.json'), { force: true })
+    const list = await call(makeDeps({ root }), '/fly/smart/tasks')
+    const row = list.json.tasks.find(entry => entry.id === FIXTURE_ID)
+    assert.equal(row.rulings, 2, JSON.stringify(row))
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
