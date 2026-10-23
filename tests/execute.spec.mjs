@@ -384,3 +384,30 @@ test('the verifier is pointed at the review package when the executor produced o
   const { tools: tools2, calls: calls2 } = await load({ rootDir, handRoute: HAND, reviewRoute: REVIEW, requireConsult: false, maxRework: 3 })
   assert.ok(calls2.start.length === 0)
 })
+
+test('the verdict-writer is told to read the diff, and the status reports whether it exists', async t => {
+  // 裁决（review.md）是 **brain** 写的 —— 它不被指到 diff，就只能拿评审者的散文当二手结论。
+  const rootDir = scratch(t)
+  const { tools } = await load({ rootDir, handRoute: HAND, reviewRoute: REVIEW, requireConsult: false, maxRework: 3 })
+  const session = {}
+  const taskId = await approveDesign(tools, session)
+  await call(tools, 'smart_execute', {}, session)
+
+  // status 如实报评审包在不在（"有没有"本身就是信息）。
+  let status = JSON.parse(await call(tools, 'smart_status', {}, session))
+  assert.equal(status.reviewPackage, false, JSON.stringify(status))
+
+  const { mkdirSync, writeFileSync } = await import('node:fs')
+  const { join } = await import('node:path')
+  mkdirSync(join(rootDir, 'tasks', taskId, 'evidence'), { recursive: true })
+  writeFileSync(join(rootDir, 'tasks', taskId, 'evidence', 'changes.md'), '# 变更\n')
+  status = JSON.parse(await call(tools, 'smart_status', {}, session))
+  assert.equal(status.reviewPackage, true)
+
+  // 写裁决那一步的纪律在系统提示里（brain 的 brief），不在某个工具的 prompt 里。
+  const { readFileSync } = await import('node:fs')
+  const source = readFileSync(join(packageRoot, 'tools', 'index.js'), 'utf8')
+  assert.match(source, /Read `evidence\/changes\.md` yourself before writing that verdict/u)
+  // 没有评审包时**照实说没有**，不静默跳过。
+  assert.match(source, /say so in the verdict rather than reviewing without it/u)
+})
