@@ -27,7 +27,7 @@ description: Use when 创建新技能、修改既有技能、或在部署前验�
 *Skills are NOT: Narratives about how you solved a problem once*
 技能不是：关于"你某一次怎么解决了一个问题"的叙事。
 
-## TDD 映射表（灵魂，一行不许少）
+## TDD 映射表（灵魂，**原表 10 行一行不许少**）
 
 | TDD Concept | Skill Creation |
 |-------------|----------------|
@@ -38,6 +38,9 @@ description: Use when 创建新技能、修改既有技能、或在部署前验�
 | **Refactor** | 堵漏洞且保持合规 |
 | **Write test first** | 写技能前先跑基线 |
 | **Watch it fail** | 记下它用过的原话借口 |
+| **Minimal code** | 只针对那些违规写技能（不写通用论文） |
+| **Watch it pass** | 验证 agent 现在遵守了 |
+| **Refactor cycle** | 找到新的借口 → 堵 → 重新验证 |
 
 整个技能创作流程都走 RED-GREEN-REFACTOR。
 
