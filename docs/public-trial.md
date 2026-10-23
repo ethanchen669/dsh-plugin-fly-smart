@@ -13,7 +13,7 @@
 | # | 做什么 | 为什么 | 判据 |
 | --- | --- | --- | --- |
 | 1 | **重启 dev app** | 引擎把客户端包缓存在**进程内**；10 个技能也要重启才挂上 | 本会话技能目录里出现 `smart-parallel` / `smart-write-skill` / `smart-diagnose`（S1 的 7 个已在） |
-| 2 | **仓库转 public** | 只有你能改；它同时解封 `--provenance` | GitHub 上 `dsh-plugin-fly-smart` 可匿名访问 |
+| 2 | ~~仓库转 public~~ ✅ **已完成（2026-10-23）** | 它解封了 `--provenance`（已在 `release.yml` 恢复） | GitHub 上可匿名访问 |
 | 3 | **路由配齐** | 终审**不许回落**，只配 `handRoute` 走不到 G5 | `brainRoute` / `handRoute` / `reviewRoute` 三条都在（你已有） |
 
 > 转 public 后把 `release.yml` 那行改回 `npm publish --access public --provenance`

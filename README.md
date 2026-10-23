@@ -1,4 +1,4 @@
-# dsh-plugin-fly-smart
+# @dsh-fly/dsh-plugin-fly-smart
 
 **带用户门禁的三模型工作流** —— DeepSeek Harness 插件。
 
@@ -99,7 +99,7 @@ lite:    <provider>/<fast-model>@high      # 探索 / 取证 / 并行调查
 ## 装
 
 ```
-dsh plugin add dsh-plugin-fly-smart
+dsh plugin add @dsh-fly/dsh-plugin-fly-smart
 ```
 
 配好三条路由即可开用。没配会**大声报错并指路**，不会静默跑偏。

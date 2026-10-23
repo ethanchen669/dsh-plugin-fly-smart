@@ -9,7 +9,7 @@
 | 平面 | 入口 | `inject` | 挂载方式 |
 | --- | --- | --- | --- |
 | **宿主**（面板 + 自带技能） | `index.js` | `['webServer', 'skills']` | `cordis.patch.yml` 登记**裸包名**那一行 |
-| **agent**（阶段机 + 工具） | `tools/index.js` | `['tools', 'commands', 'systemPrompt']` | preset 行 `name: dsh-plugin-fly-smart/tools/index.js`，按会话 |
+| **agent**（阶段机 + 工具） | `tools/index.js` | `['tools', 'commands', 'systemPrompt']` | preset 行 `name: @dsh-fly/dsh-plugin-fly-smart/tools/index.js`，按会话 |
 
 `dsh.bundle.patch` 指向 `cordis.patch.yml`，里面**只有裸名那一行**：
 
@@ -205,7 +205,7 @@ await activation.dispose()
 **不是它**（DSH 移植，非官方）· 多了什么（五项扩展）。
 
 **发布（tag → OIDC）**：升 `version` → 提交 → 打注释 tag → 推 tag ⇒ `release.yml` 自动
-`npm publish --access public`。
+`npm publish --access public --provenance`（仓库已 public，provenance 条件满足）。
 
 - 重推同一个 tag **不会**重跑 workflow ⇒ 要重跑就换一个新 tag。
 - 验收（**换缓存键**）：`/-/package/<name>/dist-tags` 与 packument 各读一次

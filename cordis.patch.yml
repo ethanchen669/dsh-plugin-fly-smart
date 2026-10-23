@@ -1,11 +1,12 @@
-# dsh-plugin-fly-smart 的**宿主层**声明：只有 Fly 工作台那一页。
+# @dsh-fly/dsh-plugin-fly-smart 的**宿主层**声明：只有 Fly 工作台那一页。
 #
-# **行名必须是裸包名**（实测 + 读码：`dsh-client-modules/lib/index.js:82` 的 `exactPackageSpecifier()`
-# 对**带 `/` 的行名一律返回 undefined** ⇒ 客户端半边不会被登记、面板在浏览器里根本不出现）。
+# **行名必须是包名本身**（读码：`dsh-client-modules/lib/index.js:82` 的 `exactPackageSpecifier()` ——
+# 非 scoped 名不许带 `/`；scoped 名 `@scope/name` 必须**恰好两段** ⇒ `@a/b/tools` 这种子路径行
+# 返回 undefined、客户端半边不登记、面板在浏览器里根本不出现）。
 # 所以本包的**裸名 = 宿主平面的面板**（这一行），agent 平面的工具挪到包内子路径
 # `tools/index.js`，由 preset 按会话挂载 —— 这样两条纪律同时满足：
 #   ① bundle patch 里**没有** `inject: ['tools']` 的行（宿主不会在开机激活工具插件）；
 #   ② 面板这一行是裸名 ⇒ 它的客户端半边登记得上。
 - insert:
     - id: fly-smart-panel
-      name: dsh-plugin-fly-smart
+      name: @dsh-fly/dsh-plugin-fly-smart

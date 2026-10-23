@@ -97,7 +97,7 @@ check(`files 覆盖入口及其 import 图（${reachable.size} 个文件）`, mi
   // 对带 `/` 的行名一律返回 undefined ⇒ 客户端半边不会被登记、面板在浏览器里根本不出现（实测过：
   // 子路径行时 boot payload 里连一条 smart 都没有）。裸名指向**面板**，工具在 tools/ 子路径里
   // 由 preset 挂载 ⇒ 客户端登记与"宿主不激活工具插件"两条同时成立。
-  check('那一行是本包的**裸包名**（客户端半边只对裸名行登记）', rowNames[0] === 'dsh-plugin-fly-smart', String(rowNames[0]))
+  check('那一行是本包的**包名本身**（客户端半边只对包名行登记）', rowNames[0] === manifest.name, `row=${rowNames[0]} pkg=${manifest.name}`)
   // 禁的是**工具那半边**：`tools/index.js` 的插件 inject ['tools','commands','systemPrompt']，
   // 写进 bundle 就等于宿主开机激活一个要 tools 的插件（本仓与 dsh-fly 坑表都记着）。
   // 判据落在**行名**上，不 grep 全文：注释里提到 `tools/index.js` 是解释，不是声明
