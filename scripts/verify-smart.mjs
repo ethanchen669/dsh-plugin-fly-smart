@@ -23,7 +23,7 @@
 
 import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -135,6 +135,49 @@ const INTERNAL = [/llm-mioffice/iu, /xiaomi\/mimo-/iu, /gpt-6-astra/iu, /ppio\/p
 // 只扫 `.mjs|.js|.tsx` 时，README 里写一句内网 provider 就**照旧 22/22**（这次就漏过一次）。
 const text = [...shipped].filter(rel => /\.(mjs|js|tsx|md)$/u.test(rel) && !rel.startsWith('scripts/')).map(rel => readFileSync(join(ROOT, rel), 'utf8'))
 const internalHits = text.flatMap(body => String(body).split('\n').filter(line => INTERNAL.some(pattern => pattern.test(line))))
+// ④.b 脚本/测试里的每个**裸 import 都必须是已声明的依赖**
+//
+// 这一条是踩出来的：`verify-smart.mjs` 里 `await import('js-yaml')` 用了**没声明**的包 ——
+// 本机能解析（别处装过），干净克隆与 CI 里直接 `Cannot find package 'js-yaml'` ⇒ 两条 YAML
+// 检查全红、发布 workflow 断在"跑门禁"。**本机能过 ≠ CI 能过**，判据要能看见后者。
+{
+  const PLATFORM_EXTERNALS = new Set(['react', 'react-dom', 'react/jsx-runtime'])
+  const declared = new Set([
+    ...Object.keys(manifest.dependencies ?? {}),
+    ...Object.keys(manifest.peerDependencies ?? {}),
+    ...Object.keys(manifest.devDependencies ?? {}),
+  ])
+  const sources = []
+  const walk = dir => {
+    if (!existsSync(dir)) return
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (entry.name === 'node_modules' || entry.name.startsWith('.')) continue
+      const full = join(dir, entry.name)
+      if (entry.isDirectory()) { walk(full); continue }
+      if (!/\.(mjs|js|tsx)$/u.test(entry.name)) continue
+      // `lib/client.js` 是**构建产物**（外部依赖由宿主提供），不当源码扫
+      if (full === join(ROOT, 'lib', 'client.js')) continue
+      sources.push(full)
+    }
+  }
+  for (const dir of ['scripts', 'tests', 'panel', 'tools', 'lib', 'src']) walk(join(ROOT, dir))
+  sources.push(join(ROOT, 'index.js'))
+
+  const undeclared = new Set()
+  for (const file of sources) {
+    if (!existsSync(file)) continue
+    const body = readFileSync(file, 'utf8')
+    for (const match of body.matchAll(/(?:^|[\s(=,])(?:import|export)[^'"\n]*?from\s*['"]([^'"]+)['"]|import\s*\(\s*['"]([^'"]+)['"]\s*\)|require\s*\(\s*['"]([^'"]+)['"]\s*\)/gmu)) {
+      const spec = match[1] ?? match[2] ?? match[3]
+      if (spec === undefined || spec.startsWith('node:') || spec.startsWith('.') || spec.startsWith('#')) continue
+      const name = spec.startsWith('@') ? spec.split('/').slice(0, 2).join('/') : spec.split('/')[0]
+      if (PLATFORM_EXTERNALS.has(spec) || PLATFORM_EXTERNALS.has(name)) continue
+      if (!declared.has(name)) undeclared.add(`${relative(ROOT, file)} → ${name}`)
+    }
+  }
+  check('源码里的每个裸 import 都是已声明的依赖（本机能解析 ≠ CI 能解析）', undeclared.size === 0, [...undeclared].slice(0, 4).join(' | '))
+}
+
 check('交付字节里不出现内网 provider / 内网模型 id', internalHits.length === 0, internalHits.slice(0, 2).join(' | '))
 
 // ⑤ repository.url 与仓名一致
