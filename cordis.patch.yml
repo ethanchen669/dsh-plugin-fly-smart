@@ -9,4 +9,4 @@
 #   ② 面板这一行是裸名 ⇒ 它的客户端半边登记得上。
 - insert:
     - id: fly-smart-panel
-      name: @dsh-fly/dsh-plugin-fly-smart
+      name: '@dsh-fly/dsh-plugin-fly-smart'

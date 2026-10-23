@@ -92,7 +92,20 @@ check(`files 覆盖入口及其 import 图（${reachable.size} 个文件）`, mi
   const bundlePatch = existsSync(patchPath) ? readFileSync(patchPath, 'utf8') : ''
   const rowNames = [...bundlePatch.matchAll(/^\s*-?\s*name:\s*'?([^'\n]+?)'?\s*$/gmu)].map(m => m[1])
   check('bundle 层指向 cordis.patch.yml', manifest.dsh?.bundle?.patch === './cordis.patch.yml', String(manifest.dsh?.bundle?.patch))
-  check('bundle patch 里恰好一行（工作台那一页）', rowNames.length === 1, rowNames.join(', '))
+  // **文件写完 ≠ 文件合法**（AGENTS.md 那一课）：`@` 开头的 plain scalar 在 YAML 里是
+// 保留字符、解析直接炸。改行名为 scoped 包名后就踩了 —— 字符串 `includes` 断言全绿，
+// 真解析器一上来就红。凡别的系统要解析的产物，先用**它自己的解析器**跑一遍。
+{
+  const yamlText = readFileSync(join(ROOT, manifest.dsh.bundle.patch), 'utf8')
+  let parsed = null
+  let parseError = null
+  try {
+    const mod = await import('js-yaml')
+    parsed = (mod.default ?? mod).load(yamlText)
+  } catch (error) { parseError = String(error?.message ?? error) }
+  check(`bundle patch 是**合法 YAML**（真解析，不是字符串匹配）`, Array.isArray(parsed), (parseError ?? 'root 不是数组').split('\n')[0])
+}
+check('bundle patch 里恰好一行（工作台那一页）', rowNames.length === 1, rowNames.join(', '))
   // **必须是裸包名**：`@deepseek-ai/dsh-client-modules/lib/index.js:82` 的 `exactPackageSpecifier()`
   // 对带 `/` 的行名一律返回 undefined ⇒ 客户端半边不会被登记、面板在浏览器里根本不出现（实测过：
   // 子路径行时 boot payload 里连一条 smart 都没有）。裸名指向**面板**，工具在 tools/ 子路径里
