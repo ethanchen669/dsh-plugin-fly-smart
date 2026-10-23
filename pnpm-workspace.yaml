@@ -1,4 +1,16 @@
+# pnpm 11 的「允许哪些依赖跑安装脚本」读在这里（package.json 的 `pnpm` 字段在本版不生效）。
+#
+# 为什么必须写：不声明时 `pnpm install` 直接以
+#   ERR_PNPM_IGNORED_BUILDS: Ignored build scripts: esbuild@0.21.5
+# 退出码 1 收场。而 CI 每一步安装都是 `--frozen-lockfile` ⇒ **整条发布流水线断在"装依赖"**，
+# 与发布本身毫无关系，看日志像"环境问题"。
+#
+# esbuild 是 vite 的传递依赖，`scripts/build-client.mjs` 构建面板客户端要用它 ⇒ **批准**。
+#
+# 只有 `allowBuilds` 生效；`onlyBuiltDependencies` 在本版被忽略（写了同样红）——
+# 这条是试出来的，别照着旧文档写。占位值 `set this to true or false` 是 pnpm 自己填的，
+# 必须改成 true/false，否则照旧报同样的错。
 allowBuilds:
-  esbuild: set this to true or false
-minimumReleaseAgeExclude:
-  - '@dsh-fly/fly-panel-style@0.1.0'
+  esbuild: true
+onlyBuiltDependencies:
+  - esbuild

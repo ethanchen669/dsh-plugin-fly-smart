@@ -141,6 +141,27 @@ check('交付字节里不出现内网 provider / 内网模型 id', internalHits.
 const url = manifest.repository?.url ?? ''
 check('repository.url 指本仓', url.endsWith('github.com/ethanchen669/dsh-plugin-fly-smart.git'), url)
 
+// ⑤.c 安装脚本的批准项要在**仓库里**，不能只修本机
+//
+// pnpm 11 不声明 `allowBuilds` 时 `pnpm install` 以 `ERR_PNPM_IGNORED_BUILDS` **退出码 1**，
+// 而 CI 每一步安装都带 `--frozen-lockfile` ⇒ 发布流水线断在"装依赖"，与发布毫无关系。
+// 本机"能装"不算数：批准项必须落在仓库里，否则只有本机能跑。
+{
+  const workspaceFile = join(ROOT, 'pnpm-workspace.yaml')
+  const workspaceText = existsSync(workspaceFile) ? readFileSync(workspaceFile, 'utf8') : ''
+  // 用**真解析器**看值：占位值在注释里出现不算问题（本文件的注释就解释了它），
+  // 只有它还是个**字符串值**时才是没填。
+  let workspace = null
+  try {
+    const mod = await import('js-yaml')
+    workspace = (mod.default ?? mod).load(workspaceText)
+  } catch { workspace = null }
+  const allowBuilds = workspace?.allowBuilds
+  check('pnpm-workspace.yaml 是合法 YAML 且声明了 allowBuilds', allowBuilds !== null && typeof allowBuilds === 'object', String(allowBuilds ?? workspaceText.split('\n')[0]))
+  const notBoolean = Object.entries(allowBuilds ?? {}).filter(([, value]) => typeof value !== 'boolean').map(([name]) => name)
+  check('allowBuilds 的每一项都是布尔值（没有留着 pnpm 的占位字符串）', notBoolean.length === 0, notBoolean.join(', '))
+}
+
 // ⑤.b peer 范围要吃得到 harness 的**预发布**构建
 //
 // 市场规范点名的那个坑：node-semver 只在「范围里某个比较符与该版本的 major.minor.patch
