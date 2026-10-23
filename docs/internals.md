@@ -186,6 +186,15 @@ await activation.dispose()
   **交付字节无内网 provider**、必需文件在位）。**引擎无关**，任何机器都能跑。
 - **改 `src/client/` 要 `pnpm build:clients`**（宿主仓跑，含外部插件）+ **重启 dev app**
   （引擎把客户端包缓存在进程内，刷新不够）
+- **新增/改名 `assets/<name>/SKILL.md` 也要重启进程**，刷新页面同样不够 —— 而原因不同：
+  技能清单是**注册时一次性展开**的。`ctx.skills.registerProvider(create)` 里
+  `provider = create(control)` 只调**一次**（`dsh-skill/lib/index.js:147`），
+  `smartSkillProvider()` 于是在**那一刻**把 `bundledSkills()` 读成固定数组、`list()` 只是
+  闭包返回它 ⇒ 之后往磁盘加技能，这个进程永远看不见。
+  实测（2026-10-23）：磁盘 10 个技能，运行中的 dev app 目录里仍是 7 个（差 `smart-diagnose`
+  / `smart-parallel` / `smart-write-skill`），重启后才有 10 个。
+  这是**设计**不是 bug（`apply()` 的注释要求"注册时就展开全部技能"，少一个 SKILL.md 或
+  frontmatter 缺键要当场抛），代价就是"加技能必须重启" —— 试运行手册把它列成开跑前的第 1 步。
 - 宿主侧集成验收在 dsh-fly 仓 `scripts/verify-smart-integration.mjs`
 
 ### 纪律（都在这套代码里踩过）
