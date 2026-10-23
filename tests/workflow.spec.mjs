@@ -52,6 +52,7 @@ function scratch(t) {
 }
 
 const HAND = { provider: 'deepseek', model: 'flash' }
+const REVIEW = { provider: 'deepseek', model: 'pro' }
 
 /** Minimal tool-layer harness: counts spawns and dispatches card answers by id. */
 async function load(config, { output } = {}) {
@@ -83,7 +84,7 @@ async function load(config, { output } = {}) {
     commands: { register: () => () => {} },
     get: name => services[name],
   }
-  mod.apply(ctx, { allowGlobalRoot: true, handRoute: HAND, requireConsult: true, ...config })
+  mod.apply(ctx, { allowGlobalRoot: true, handRoute: HAND, reviewRoute: REVIEW, requireConsult: true, ...config })
   return { tools, calls }
 }
 
@@ -244,7 +245,7 @@ test('the discipline text names the ADR-lite contract and the optimized brainsto
     commands: { register: command => { commands.push(command) } },
     get: () => undefined,
   }
-  mod.apply(ctx, { rootDir, allowGlobalRoot: true, handRoute: HAND, requireConsult: true })
+  mod.apply(ctx, { rootDir, allowGlobalRoot: true, handRoute: HAND, reviewRoute: REVIEW, requireConsult: true })
   // 纪律节只在 /smart on 之后发声（模式开关由命令 handler 置位，smart_begin 不置位）。
   const session = {}
   const command = commands[0]

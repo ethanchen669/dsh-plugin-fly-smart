@@ -33,6 +33,7 @@ function scratch(t) {
 
 const BRAIN = { provider: 'deepseek', model: 'pro' }
 const HAND = { provider: 'deepseek', model: 'flash', reasoningEffort: 'low' }
+const REVIEW = { provider: 'deepseek', model: 'opus', reasoningEffort: 'high' }
 
 /**
  * `subagents.start()` 的**真契约** run 句柄（形状对齐 `dsh-subagent-in-process-driver`）：
@@ -115,14 +116,14 @@ async function seed(tools, session, phase = 'brainstorm') {
   return begun.taskId
 }
 
-test('smart_consult pins the hand route and records the review', async t => {
+test('smart_consult pins the review route and records it', async t => {
   const rootDir = scratch(t)
-  const { tools, calls } = await load({ rootDir, brainRoute: BRAIN, handRoute: HAND })
+  const { tools, calls } = await load({ rootDir, brainRoute: BRAIN, handRoute: HAND, reviewRoute: REVIEW })
   const session = {}
   const taskId = await seed(tools, session)
 
   // 草稿还没写就评审 → 大声拒绝，且不花子代理的钱。
-  const bare = await load({ rootDir: scratch(t), handRoute: HAND })
+  const bare = await load({ rootDir: scratch(t), handRoute: HAND, reviewRoute: REVIEW })
   const bareSession = {}
   await call(bare.tools, 'smart_begin', { title: 'bare' }, bareSession)
   await assert.rejects(call(bare.tools, 'smart_consult', {}, bareSession), /write brainstorm\.md before asking for a review/u)
@@ -130,21 +131,23 @@ test('smart_consult pins the hand route and records the review', async t => {
 
   const out = JSON.parse(await call(tools, 'smart_consult', { question: '哪里会炸？' }, session))
   assert.equal(out.consulted, 'brainstorm')
-  assert.equal(out.reviewer, 'deepseek/flash')
+  // 评审走 reviewRoute（不是 hand）：评审员不该是执行者那条。旧断言写死 hand，
+  // 是靠「没配 reviewRoute 时回落 hand」凑出来的绿 —— 配上 reviewRoute 就露出真值。
+  assert.equal(out.reviewer, 'deepseek/opus')
 
-  // 路由钉死：子代理必须用 handRoute，且是自包含的 spawn（执行模型不需要整个设计过程）。
+  // 路由钉死：子代理必须用 reviewRoute，且是自包含的 spawn（评审不需要整个设计过程）。
   // 自动 briefing 也在 spawn —— 按 label 挑出 consult 那一次来断（B4：计数断言全移）。
   const consultSpawn = spawnsOf(calls, 'smart consult').at(-1)
   assert.ok(consultSpawn, 'the consult child must have been spawned')
   assert.equal(consultSpawn.provider, 'spawn')
-  assert.deepEqual(consultSpawn.request.agentOptions, HAND)
+  assert.deepEqual(consultSpawn.request.agentOptions, REVIEW)
   assert.notDeepEqual(consultSpawn.request.agentOptions, BRAIN)
   const prompt = consultSpawn.request.prompt[0].text
   assert.match(prompt, /# brainstorm/u)
   assert.match(prompt, /哪里会炸？/u)
 
   const record = readConsult(rootDir, taskId, 'brainstorm')
-  assert.equal(record.model, 'flash')
+  assert.equal(record.model, 'opus')
   // 正文必须是手模型一字不差的产出（曾把 run 句柄 JSON 化当正文录进去 —— A/B 的红点）。
   assert.equal(record.body, '手模型评审：缺回滚点。')
   // 孩子跑完必须释放（官方 settleRun 姿势：await result → dispose）—— 每个孩子一次。
@@ -171,7 +174,7 @@ test('smart_consult refuses without a configured route, naming the field it actu
 
 test('smart_consult fails loudly when the subagent seam is absent', async t => {
   const rootDir = scratch(t)
-  const { tools } = await load({ rootDir, handRoute: HAND }, { drop: ['subagents'] })
+  const { tools } = await load({ rootDir, handRoute: HAND, reviewRoute: REVIEW }, { drop: ['subagents'] })
   const session = {}
   await seed(tools, session)
   await assert.rejects(call(tools, 'smart_consult', {}, session), /subagent registry service \(`subagents`\) is unavailable/u)
@@ -179,7 +182,7 @@ test('smart_consult fails loudly when the subagent seam is absent', async t => {
 
 test('a gate with unmet preconditions is never put to the user', async t => {
   const rootDir = scratch(t)
-  const { tools, calls } = await load({ rootDir, handRoute: HAND, requireConsult: true })
+  const { tools, calls } = await load({ rootDir, handRoute: HAND, reviewRoute: REVIEW, requireConsult: true })
   const session = {}
   await seed(tools, session)
 
@@ -214,7 +217,7 @@ test('gate answers drive pass / rework / cancel, and unknown answers change noth
   // ── 退回：产物进 history，阶段回退，reworkCount 加一
   {
     const rootDir = scratch(t)
-    const { tools } = await load({ rootDir, handRoute: HAND, requireConsult: false }, { userQuestions: answer('退回本阶段重做') })
+    const { tools } = await load({ rootDir, handRoute: HAND, reviewRoute: REVIEW, requireConsult: false }, { userQuestions: answer('退回本阶段重做') })
     const session = {}
     const taskId = await seed(tools, session)
     const out = JSON.parse(await call(tools, 'smart_gate', {}, session))
@@ -232,7 +235,7 @@ test('gate answers drive pass / rework / cancel, and unknown answers change noth
   // ── 终止
   {
     const rootDir = scratch(t)
-    const { tools } = await load({ rootDir, handRoute: HAND, requireConsult: false }, { userQuestions: answer('终止任务') })
+    const { tools } = await load({ rootDir, handRoute: HAND, reviewRoute: REVIEW, requireConsult: false }, { userQuestions: answer('终止任务') })
     const session = {}
     const taskId = await seed(tools, session)
     const out = JSON.parse(await call(tools, 'smart_gate', {}, session))
@@ -243,7 +246,7 @@ test('gate answers drive pass / rework / cancel, and unknown answers change noth
   // ── 认不出的答案：不许"看起来过门了"
   {
     const rootDir = scratch(t)
-    const { tools } = await load({ rootDir, handRoute: HAND, requireConsult: false }, { userQuestions: answer('随便写点什么') })
+    const { tools } = await load({ rootDir, handRoute: HAND, reviewRoute: REVIEW, requireConsult: false }, { userQuestions: answer('随便写点什么') })
     const session = {}
     const taskId = await seed(tools, session)
     await assert.rejects(call(tools, 'smart_gate', {}, session), /unrecognised gate answer/u)
@@ -257,7 +260,7 @@ test('gate answers drive pass / rework / cancel, and unknown answers change noth
 test('the rework budget is per phase, and running out asks the user instead of forcing a finish', async t => {
   const rootDir = scratch(t)
   const asked = []
-  const { tools } = await load({ rootDir, handRoute: HAND, requireConsult: false, maxRework: 1 }, {
+  const { tools } = await load({ rootDir, handRoute: HAND, reviewRoute: REVIEW, requireConsult: false, maxRework: 1 }, {
     // 用户就点门上「退回」那一项：第一轮是普通退回，额度耗尽后同一位子换成加额版 —— 两种
     // 走法都要能过，这正是"额度归零 ≠ 强制收尾"的可执行判据。
     userQuestions: {
@@ -318,7 +321,7 @@ test('at G5 the acceptance-failure option returns to the plan (it used to throw 
   // 一路通过到 G5，然后在终门上选「验收不通过，退回计划（plan）重做」—— 这一项从 S2 起就在卡上，
   // 但应答分支按「退回」前缀匹配，它不以「退回」开头，于是用户一点就抛 unrecognised。
   const asked = []
-  const { tools } = await load({ rootDir, handRoute: HAND, brainRoute: BRAIN, requireConsult: false }, {
+  const { tools } = await load({ rootDir, handRoute: HAND, reviewRoute: REVIEW, brainRoute: BRAIN, requireConsult: false }, {
     userQuestions: {
       ask: async question => {
         const card = question.questions[0]
@@ -362,7 +365,7 @@ test('at G5 the acceptance-failure option returns to the plan (it used to throw 
 
 test('the full design walk passes four gates and hands over to execution', async t => {
   const rootDir = scratch(t)
-  const { tools, calls } = await load({ rootDir, handRoute: HAND, brainRoute: BRAIN })
+  const { tools, calls } = await load({ rootDir, handRoute: HAND, reviewRoute: REVIEW, brainRoute: BRAIN })
   const session = {}
   await seed(tools, session)
   const phases = []
@@ -409,7 +412,7 @@ async function reachPlan(tools, session) {
 test('a plan without the document contract is refused at write time, not after briefing+consult', async t => {
   // **写入处就挡**：等 G3 才撞墙 = 白花 briefing + consult 两轮子代理调用。
   const rootDir = scratch(t)
-  const { tools, calls } = await load({ rootDir, handRoute: HAND, brainRoute: BRAIN })
+  const { tools, calls } = await load({ rootDir, handRoute: HAND, reviewRoute: REVIEW, brainRoute: BRAIN })
   const session = {}
   await reachPlan(tools, session)
   const before = calls.start.length
@@ -429,7 +432,7 @@ test('a plan without the document contract is refused at write time, not after b
 test('the gate still catches a contract-less plan.md that reached the disk by other means', async t => {
   // defense in depth：盘上的文件也可能被人手改过（或旧任务遗留）。门上那道仍在。
   const rootDir = scratch(t)
-  const { tools } = await load({ rootDir, handRoute: HAND, brainRoute: BRAIN })
+  const { tools } = await load({ rootDir, handRoute: HAND, reviewRoute: REVIEW, brainRoute: BRAIN })
   const session = {}
   await reachPlan(tools, session)
   // 先按契约正常落盘（写入校验过），确认 briefing、派 consult —— 然后**带外把文件改坏**。
@@ -451,7 +454,7 @@ test('the gate still catches a contract-less plan.md that reached the disk by ot
 
 test('a contract-complete plan opens G3', async t => {
   const rootDir = scratch(t)
-  const { tools } = await load({ rootDir, handRoute: HAND, brainRoute: BRAIN })
+  const { tools } = await load({ rootDir, handRoute: HAND, reviewRoute: REVIEW, brainRoute: BRAIN })
   const session = {}
   await reachPlan(tools, session)
   await call(tools, 'smart_artifact', { phase: 'plan', markdown: PLAN_DRAFT }, session)
@@ -464,7 +467,7 @@ test('a contract-complete plan opens G3', async t => {
 test('the plan contract binds v1 too, and only plan.md carries it', async t => {
   // 契约是计划质量的地板，**不随工作流版本放宽**（v1 与 optimized 同判据）。
   const rootDir = scratch(t)
-  const { tools } = await load({ rootDir, handRoute: HAND, brainRoute: BRAIN })
+  const { tools } = await load({ rootDir, handRoute: HAND, reviewRoute: REVIEW, brainRoute: BRAIN })
   const session = {}
   await reachPlan(tools, session)
   const err = await call(tools, 'smart_artifact', { phase: 'plan', markdown: '# 计划' }, session).then(() => null, error => error)
@@ -477,4 +480,38 @@ test('the plan contract binds v1 too, and only plan.md carries it', async t => {
   // 写入被拒 ⇒ 门根本没开（不是"门开着但缺契约"）：一步退回，不白花 briefing/consult。
   const status = JSON.parse(await call(tools, 'smart_status', {}, session))
   assert.equal(status.awaitingGate, null)
+})
+
+// ── S4：终审不许回落（integration）────────────────────────────────────────────
+
+test('the final review refuses to run on a fallback route', async t => {
+  // 只配 handRoute、不配 reviewRoute ⇒ review 会回落到 hand —— 最坏情况是执行者审自己。
+  // 这条路必须**大声断**，而不是悄悄跑完。（配上显式 reviewRoute 就放行：那是其余 150 条
+  // 用例的常态，不必在这里再走一遍整条链。）
+  const rootDir = scratch(t)
+  const { tools } = await load({ rootDir, brainRoute: BRAIN, handRoute: HAND, reviewRoute: undefined })
+  const session = {}
+  await reachPlan(tools, session)
+  await call(tools, 'smart_artifact', { phase: 'plan', markdown: PLAN_DRAFT }, session)
+  await call(tools, 'smart_brief_confirm', {}, session)
+  await call(tools, 'smart_consult', {}, session)
+  await call(tools, 'smart_gate', {}, session)                       // G3 → acceptance（v1）
+  await call(tools, 'smart_artifact', { phase: 'acceptance', markdown: '# 验收设计' }, session)
+  await call(tools, 'smart_brief_confirm', {}, session)
+  await call(tools, 'smart_consult', {}, session)
+  await call(tools, 'smart_gate', {}, session)                       // G4 → executing
+  await call(tools, 'smart_execute', {}, session)                    // 跑 hand，落执行报告
+  await call(tools, 'smart_brief_confirm', {}, session)              // 执行报告的要点确认后进 reviewing
+  await call(tools, 'smart_artifact', { phase: 'reviewing', markdown: '# 验收结论' }, session)
+
+  // reviewing 的要点生成撞上终审规则。失败有两种形状（工具抛 / 返回 briefingFailed），
+  // 两种都要认：**关键是没生成成功、且报错点名 reviewRoute**。
+  const out = await call(tools, 'smart_brief', {}, session).then(x => x, e => e.message)
+  const text = typeof out === 'string' ? out : JSON.stringify(out)
+  assert.match(text, /fallback route/u, text.slice(0, 240))
+  assert.match(text, /reviewRoute/u, text.slice(0, 240))
+
+  // 门没开：要点没落成 ⇒ G5 不会打开。
+  const status = JSON.parse(await call(tools, 'smart_status', {}, session))
+  assert.notEqual(status.awaitingGate, 'G5', JSON.stringify(status.awaitingGate))
 })

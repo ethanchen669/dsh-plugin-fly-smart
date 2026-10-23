@@ -52,6 +52,8 @@ import {
   taskDir,
   taskStatus,
   writeState,
+  assertFinalReviewRoute,
+  escalatedEffort,
   planContractGaps,
   recordRuling,
   rulingsFromReport,
@@ -660,4 +662,58 @@ test('rulingsFromReport keeps three-part rulings and drops the rest, counting wh
   assert.equal(rulings[0].decision, '用 rename 而非 move')
   // 没有 Rulings 小节 ⇒ 空手而归，不报错。
   assert.deepEqual(rulingsFromReport('# 报告\n## 步骤'), { rulings: [], skipped: 0 })
+})
+
+// ── S4：模型分级收窄 —— 终审不许回落 / 返工升档 ────────────────────────────────
+
+test('the final review refuses a fallback route and names what to configure', t => {
+  // 回落链最坏会跑到执行者用的那条上 —— 自己审自己。
+  for (const ok of ['preset', 'session', 'default']) assert.doesNotThrow(() => assertFinalReviewRoute(ok))
+  for (const bad of ['hand-fallback', 'session-fallback', 'default-fallback', undefined, null]) {
+    assert.throws(() => assertFinalReviewRoute(bad), /refuses a fallback route/u, String(bad))
+  }
+  // 报错要说清该配什么（模型只读它就知道下一步）。
+  const err = (() => { try { assertFinalReviewRoute('hand-fallback'); return null } catch (e) { return e } })()
+  assert.match(err.message, /reviewRoute/u)
+})
+
+test('escalatedEffort only escalates after a real rework, and never invents an effort', t => {
+  const route = { provider: 'p', model: 'm', reasoningEffort: 'low' }
+  // 第一次写（0）/ 第一次返工（1）：不动。
+  for (const attempts of [0, 1]) {
+    const out = escalatedEffort(route, attempts, ['low', 'medium', 'high'])
+    assert.equal(out.escalated, false)
+    assert.deepEqual(out.route, route)
+  }
+  // 第二次返工起：提到该模型支持的**最高档**。
+  const up = escalatedEffort(route, 2, ['low', 'medium', 'high'])
+  assert.equal(up.escalated, true)
+  assert.equal(up.route.reasoningEffort, 'high')
+  assert.equal(up.route.provider, 'p', '只动 effort，不动路由本身')
+  // 查不到档位表 ⇒ 原样返回并如实标注 escalated: false（不猜、不造档位名）。
+  for (const supported of [undefined, [], ['low']]) {
+    const out = escalatedEffort(route, 3, supported)
+    assert.equal(out.escalated, false, JSON.stringify(supported))
+    assert.deepEqual(out.route, route)
+  }
+})
+
+test('a briefing round records whether the review ran escalated, and at which attempt', t => {
+  // 用户有权知道这一轮评审**比上一轮更用力**，以及为什么（返工到第几稿）。
+  const root = scratch(t)
+  const { id } = createTask(root, { title: '升档留痕' })
+  recordArtifact(root, id, 'brainstorm', '# 脑暴')
+  const next = recordBriefing(root, id, 'brainstorm', {
+    provider: 'deepseek', model: 'flash', source: 'preset',
+    escalated: true, attempts: 2, body: '结论 风险 未决',
+  })
+  const round = next.briefings.brainstorm.rounds.at(-1)
+  assert.equal(round.escalated, true)
+  assert.equal(round.attempts, 2)
+  // 不升档时如实记 false/0 —— 不能是 undefined（那会让人以为"没查"）。
+  recordArtifact(root, id, 'brainstorm', '# 脑暴 v2')
+  const again = recordBriefing(root, id, 'brainstorm', { provider: 'deepseek', model: 'flash', body: '结论 风险 未决' })
+  const round2 = again.briefings.brainstorm.rounds.at(-1)
+  assert.equal(round2.escalated, false)
+  assert.equal(round2.attempts, 0)
 })

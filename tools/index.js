@@ -64,7 +64,10 @@ import {
   taskStatus,
   taskDir,
   recordRuling,
-  rulingsFromReport,} from '../lib/state.mjs'
+  rulingsFromReport,
+  escalatedEffort,
+  assertFinalReviewRoute,
+  reworkUsedIn,} from '../lib/state.mjs'
 
 /** Cordis plugin name, matched by the preset row's `name`. */
 export const name = 'fly-smart'
@@ -165,8 +168,10 @@ export function apply(ctx, rawConfig = {}) {
   const handRouteOf = exec => routeOf('hand', exec)
   const reviewRouteOf = exec => routeOf('review', exec)
 
-  const supportedEffortsOf = async exec => {
-    const route = config.brainRoute
+  // **按路由查**，不写死 brainRoute：升档用在 review/hand 上，而它们与 brain 可能是
+  // 不同的模型 —— 拿 brain 的档位表去抬 review 的 effort，会造出该模型没有的档位名。
+  const supportedEffortsOf = async (exec, forRoute) => {
+    const route = forRoute ?? config.brainRoute
     const directories = ctx.get?.('modelDirectories')
 
     if (route === undefined || directories?.directoryFor === undefined) return undefined
@@ -363,11 +368,19 @@ export function apply(ctx, rawConfig = {}) {
     }
   }
 
-  const runHand = async (exec, { label, prompt, toolFilter, role = 'hand' }) => {
+  const runHand = async (exec, { label, prompt, toolFilter, role = 'hand', phase = undefined, attempts = 0 }) => {
     // 每次调用现读（懒读）：页面保存的新路由必须在下一次 spawn 就生效。
     // `source`（preset/session/default/*-fallback）随结果带出：review 路由回落 hand 时，
     // 记录要如实标注 fallback，不能让"谁真的看了这份稿子"变成猜（acceptance B5）。
-    const { route, source } = role === 'review' ? reviewRouteOf(exec) : handRouteOf(exec)
+    const found = role === 'review' ? reviewRouteOf(exec) : handRouteOf(exec)
+    let route = found.route
+    const source = found.source
+    // **终审不许回落**（G5 那一关的评审）：回落链最坏会跑到执行者用的那条上 —— 自己审自己。
+    if (phase === 'reviewing') assertFinalReviewRoute(source)
+    // **返工升档**：同一阶段反复修不好的点，让评审那侧看得更用力（提到该模型支持的最高档；
+    // 查不到档位表就原样跑并如实标注，不猜、不造档位名）。
+    const escalation = escalatedEffort(route, attempts, await supportedEffortsOf(exec, found.route))
+    route = escalation.route
     const result = await startChild(exec, { label, prompt, agentOptions: route, toolFilter })
     if (result?.stopReason !== 'completed') {
       const detail = result?.diagnostic === undefined ? '' : `: ${result.diagnostic}`
@@ -375,7 +388,7 @@ export function apply(ctx, rawConfig = {}) {
     }
     const body = outputText(result.output)
     if (body.trim().length === 0) throw new Error(`smart: the hand model returned nothing for "${label}" — nothing was recorded`)
-    return { route, source, body }
+    return { route, source, body, escalated: escalation.escalated, attempts: escalation.attempts }
   }
 
   /**
@@ -523,7 +536,7 @@ export function apply(ctx, rawConfig = {}) {
 
   /** The verifier's briefing: an adversarial check against the acceptance contract. */
   const verifyPrompt = ({ state, acceptance, report, focus }) => [
-    'You are the *hand* model gathering acceptance evidence. You did not write the acceptance criteria and you are not here to be agreeable: your job is to find out whether each criterion is actually met, by inspection.',
+    'You are the *review* model gathering acceptance evidence — independent of the executor who wrote the report below. You did not write the acceptance criteria and you are not here to be agreeable: your job is to find out whether each criterion is actually met, by inspection.',
     '',
     `Task: ${state.title}`,
     state.goal === '' ? '' : `Goal: ${state.goal}`,
@@ -816,6 +829,8 @@ export function apply(ctx, rawConfig = {}) {
         prompt: consultPrompt({ state, phase, draft, question: args.question }),
         toolFilter: { deny: SMART_TOOL_NAMES },
         role: 'review',
+        phase,
+        attempts: reworkUsedIn(state, phase),
       })
       recordConsult(rootDir, id, phase, { provider: route.provider, model: route.model, question: args.question ?? '', body })
       return summary(rootDir, id, { consulted: phase, reviewer: `${route.provider}/${route.model}`, review: body })
@@ -936,6 +951,8 @@ export function apply(ctx, rawConfig = {}) {
       prompt: bundlePrompt({ state, phase, draft, question }),
       toolFilter: { deny: SMART_TOOL_NAMES },
       role: 'review',
+      phase,
+      attempts: reworkUsedIn(state, phase),
     })
     const { briefingBody, consultBody } = parseBundle(produced.body)
     const next = recordReviewBundle(rootDir, id, phase, {
@@ -991,6 +1008,8 @@ export function apply(ctx, rawConfig = {}) {
         // 生成面同样不许动工作流：孩子只读稿、写摘要。
         toolFilter: { deny: SMART_TOOL_NAMES },
         role: 'review',
+        phase,
+        attempts: reworkUsedIn(state, phase),
       })
     } catch (error) {
       const message = String(error?.message ?? error)
@@ -1011,6 +1030,8 @@ export function apply(ctx, rawConfig = {}) {
       provider: produced.route.provider,
       model: produced.route.model,
       source: produced.source,
+      escalated: produced.escalated === true,
+      attempts: produced.attempts ?? 0,
       body: produced.body,
     })
     return { briefing: produced.body, source: produced.source, round: next.briefings[phase].current }
@@ -1346,6 +1367,8 @@ export function apply(ctx, rawConfig = {}) {
         prompt: verifyPrompt({ state, acceptance, report, focus: args.focus }),
         toolFilter: verifyToolFilter(exec.agent),
         role: 'review',
+        phase: 'reviewing',
+        attempts: reworkUsedIn(state, 'reviewing'),
       })
       const next = recordVerification(rootDir, id, { provider: route.provider, model: route.model, body, acceptance: 'acceptance.md' })
       return summary(rootDir, id, { verified: true, verifier: `${route.provider}/${route.model}`, evidence: next.verifications.at(-1)?.file ?? null, findings: body })

@@ -48,6 +48,7 @@ function scratch(t) {
 }
 
 const HAND = { provider: 'deepseek', model: 'flash' }
+const REVIEW = { provider: 'deepseek', model: 'pro' }
 
 /** A prompt-aware tool-layer harness with per-card dispatching answers. */
 async function load(config, seams = {}) {
@@ -70,6 +71,8 @@ async function load(config, seams = {}) {
         }
       })
       : seams.subagents,
+    // 可注入的 modelDirectories：让 supportedEffortsOf 查得到档位表（升档要用）。
+    ...(seams.modelDirectories === undefined ? {} : { modelDirectories: seams.modelDirectories }),
     userQuestions: seams.userQuestions === undefined
       ? {
           ask: async question => {
@@ -86,7 +89,7 @@ async function load(config, seams = {}) {
     commands: { register: () => () => {} },
     get: name => (seams.drop?.includes(name) ? undefined : services[name]),
   }
-  mod.apply(ctx, { allowGlobalRoot: true, handRoute: HAND, requireConsult: false, ...config })
+  mod.apply(ctx, { allowGlobalRoot: true, handRoute: HAND, reviewRoute: REVIEW, requireConsult: false, ...config })
   return { tools, calls }
 }
 
@@ -313,14 +316,14 @@ test('the briefing prompt demands user-facing language and bans audit voice', as
 
 test('the briefing is generated on the review route, provenance recorded', async t => {
   const rootDir = scratch(t)
-  const REVIEW = { provider: 'llm-mioffice', model: 'xiaomi/mimo-v2.6-pro', reasoningEffort: 'high' }
-  const { tools, calls } = await load({ rootDir, reviewRoute: REVIEW })
+  const reviewRouteLocal = { provider: 'llm-mioffice', model: 'xiaomi/mimo-v2.6-pro', reasoningEffort: 'high' }
+  const { tools, calls } = await load({ rootDir, reviewRoute: reviewRouteLocal })
   const session = {}
   const begun = JSON.parse(await call(tools, 'smart_begin', { title: 'review route' }, session))
   await call(tools, 'smart_artifact', { phase: 'brainstorm', markdown: '# 脑暴' }, session)
   const briefSpawn = calls.start.find(item => item.request.label.startsWith('smart brief'))
   assert.ok(briefSpawn, 'the briefing child must have been spawned')
-  assert.deepEqual(briefSpawn.request.agentOptions, REVIEW, 'the briefing must run on the review route')
+  assert.deepEqual(briefSpawn.request.agentOptions, reviewRouteLocal, 'the briefing must run on the review route')
   assert.notDeepEqual(briefSpawn.request.agentOptions, HAND, 'not on the executing route')
   const round = readState(rootDir, begun.taskId).briefings.brainstorm.rounds[0]
   assert.equal(round.provider, 'llm-mioffice')
@@ -333,7 +336,8 @@ test('the briefing is generated on the review route, provenance recorded', async
 test('the round records the route source, labelling hand fallbacks honestly', async t => {
   const rootDir = scratch(t)
   // 无 reviewRoute 时回落 handRoute，source 是 hand-fallback —— 记录要如实标注。
-  const { tools, calls } = await load({ rootDir })
+  // 显式传 undefined 压掉 load() 的默认 reviewRoute：这条测的就是**回落**这条路。
+  const { tools, calls } = await load({ rootDir, reviewRoute: undefined })
   const session = {}
   const begun = JSON.parse(await call(tools, 'smart_begin', { title: 'source' }, session))
   await call(tools, 'smart_artifact', { phase: 'brainstorm', markdown: '# 脑暴' }, session)
@@ -511,4 +515,45 @@ test('nextAction points at the briefing before anything else once an artifact la
   assert.match(taskStatus(rootDir, id).next, /smart_brief_confirm/u)
   // briefing 未确认时，门不为它而开（ask=0 是 C2-2 的证据面）。
   assert.match(taskStatus(rootDir, id).next, /present the briefing|generate the briefing/u)
+})
+
+// ── S4：返工升档 —— 记进轮次、且只抬 effort ───────────────────────────────────
+
+test('a reworked phase escalates the review effort, and the round records it', async t => {
+  // **接线**（不只是纯函数）：runHand → escalatedEffort → recordBriefing 落进轮次。
+  // 档位表来自 modelDirectories（真接缝形状：directoryFor → load）。
+  const rootDir = scratch(t)
+  const reviewRoute = { provider: 'deepseek', model: 'flash', reasoningEffort: 'low' }
+  const modelDirectories = {
+    directoryFor: () => ({
+      load: async () => ({
+        groups: [{
+          id: 'deepseek',
+          models: [{ id: 'flash', reasoning: { efforts: [{ id: 'low' }, { id: 'medium' }, { id: 'high' }] } }],
+        }],
+      }),
+    }),
+  }
+  const { tools, calls } = await load({ rootDir, handRoute: HAND, reviewRoute }, { modelDirectories })
+  // 带 id 的会话：supportedEffortsOf 靠 session.id 去查档位表（无 id ⇒ 查不到 ⇒ 不升档）。
+  const session = { id: 'sess-escalation' }
+  const begun = JSON.parse(await call(tools, 'smart_begin', { title: 'escalate' }, session))
+  await call(tools, 'smart_artifact', { phase: 'brainstorm', markdown: '# 脑暴' }, session)
+
+  // 第一稿（attempts=0）：不升档，effort 就是配置的 low。
+  const first = calls.start.find(item => item.request.label.startsWith('smart brief'))
+  assert.deepEqual(first.request.agentOptions, reviewRoute, `不该升档：${JSON.stringify(first.request.agentOptions)}`)
+  assert.equal(readState(rootDir, begun.taskId).briefings.brainstorm.rounds.at(-1).escalated, false)
+
+  // 返工两次 ⇒ reworkUsedIn = 2 ⇒ 升到该模型支持的**最高档**（high）。
+  reworkTo(rootDir, begun.taskId, 'brainstorm', '再来')
+  reworkTo(rootDir, begun.taskId, 'brainstorm', '还来')
+  await call(tools, 'smart_artifact', { phase: 'brainstorm', markdown: '# 脑暴 v2' }, session)
+
+  const second = calls.start.filter(item => item.request.label.startsWith('smart brief')).at(-1)
+  assert.equal(second.request.agentOptions.reasoningEffort, 'high', JSON.stringify(second.request.agentOptions))
+  assert.equal(second.request.agentOptions.model, 'flash', '只抬 effort，不换模型')
+  const round = readState(rootDir, begun.taskId).briefings.brainstorm.rounds.at(-1)
+  assert.equal(round.escalated, true, JSON.stringify(round))
+  assert.equal(round.attempts, 2)
 })

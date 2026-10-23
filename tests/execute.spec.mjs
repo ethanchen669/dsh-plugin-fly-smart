@@ -30,6 +30,7 @@ function scratch(t) {
 }
 
 const HAND = { provider: 'deepseek', model: 'flash' }
+const REVIEW = { provider: 'deepseek', model: 'pro' }
 const BRAIN = { provider: 'deepseek', model: 'pro' }
 
 /**
@@ -98,7 +99,7 @@ async function approveDesign(tools, session) {
 
 test('execution cannot start before gate G4', async t => {
   const rootDir = scratch(t)
-  const { tools, calls } = await load({ rootDir, handRoute: HAND, brainRoute: BRAIN, requireConsult: false, maxRework: 3 })
+  const { tools, calls } = await load({ rootDir, handRoute: HAND, reviewRoute: REVIEW, brainRoute: BRAIN, requireConsult: false, maxRework: 3 })
   const session = {}
   await call(tools, 'smart_begin', { title: 'early' }, session)
   await call(tools, 'smart_artifact', { phase: 'brainstorm', markdown: '# 脑暴' }, session)
@@ -108,7 +109,7 @@ test('execution cannot start before gate G4', async t => {
 
 test('smart_execute runs the pinned hand route and records the report', async t => {
   const rootDir = scratch(t)
-  const { tools, calls } = await load({ rootDir, handRoute: HAND, brainRoute: BRAIN, requireConsult: false, maxRework: 3 })
+  const { tools, calls } = await load({ rootDir, handRoute: HAND, reviewRoute: REVIEW, brainRoute: BRAIN, requireConsult: false, maxRework: 3 })
   const session = {}
   const taskId = await approveDesign(tools, session)
   assert.equal(readState(rootDir, taskId).phase, 'executing')
@@ -145,7 +146,7 @@ test('smart_execute runs the pinned hand route and records the report', async t 
 test('evidence gathering is read-only in code and lands as a file', async t => {
   const rootDir = scratch(t)
   // 取证只读名单只在**接受 toolFilter 的老面**上可验（新宿主的请求类型没有这个字段）。
-  const { tools, calls } = await load({ rootDir, handRoute: HAND, requireConsult: false, maxRework: 3 }, '# 证据\n- 验收项 A：PASS，`ls -l x`', {}, { legacy: true })
+  const { tools, calls } = await load({ rootDir, handRoute: HAND, reviewRoute: REVIEW, requireConsult: false, maxRework: 3 }, '# 证据\n- 验收项 A：PASS，`ls -l x`', {}, { legacy: true })
   const session = {}
   const taskId = await approveDesign(tools, session)
   await assert.rejects(call(tools, 'smart_verify', {}, session), /evidence is gathered in the review phase/u)
@@ -154,7 +155,9 @@ test('evidence gathering is read-only in code and lands as a file', async t => {
   await call(tools, 'smart_brief_confirm', {}, session)
   const out = JSON.parse(await call(tools, 'smart_verify', { focus: '只看 A' }, session))
   assert.equal(out.verified, true)
-  assert.equal(out.verifier, 'deepseek/flash')
+  // 取证走 review 路由（独立于执行者）：旧断言写死 hand，是靠「没配 reviewRoute 时
+  // 回落 hand」凑出来的绿。配上 reviewRoute 就露出真值 —— 取证员不该是执行者那条。
+  assert.equal(out.verifier, 'deepseek/pro')
 
   const started = spawnsOf(calls, 'smart verify').at(-1)
   const deny = started.request.toolFilter.deny
@@ -176,7 +179,7 @@ test('the read-only list converges to what this deployment actually has', async 
   // 名字**直接抛错**，于是 `smart_verify` 在那种部署上第一步就死。收敛后只剩本部署真有的名字。
   const rootDir = scratch(t)
   const known = new Set(['read', 'bash', 'grep', 'write', 'edit', 'subagent_fork', ...['smart_begin', 'smart_artifact', 'smart_consult', 'smart_decide', 'smart_ruling', 'smart_gate', 'smart_execute', 'smart_verify', 'smart_rework', 'smart_finish', 'smart_brief', 'smart_brief_confirm']])
-  const { tools, calls } = await load({ rootDir, handRoute: HAND, requireConsult: false, maxRework: 3 }, undefined, { view: () => ({ restrictableNames: known }) }, { legacy: true })
+  const { tools, calls } = await load({ rootDir, handRoute: HAND, reviewRoute: REVIEW, requireConsult: false, maxRework: 3 }, undefined, { view: () => ({ restrictableNames: known }) }, { legacy: true })
   const session = {}
   await approveDesign(tools, session)
   await call(tools, 'smart_execute', {}, session)
@@ -195,7 +198,7 @@ test('an untrustworthy view falls back to the full list instead of denying nothi
   // 视图里连 `write` 都没有 ⇒ 这个视图不可信（不是"本部署没有 write 工具"）⇒ 退回全名单。
   // 反面：若这里收敛成 `deny: []`，证据面就悄悄变成可写了。
   const rootDir = scratch(t)
-  const { tools, calls } = await load({ rootDir, handRoute: HAND, requireConsult: false, maxRework: 3 }, undefined, { view: () => ({ restrictableNames: new Set(['bash']) }) }, { legacy: true })
+  const { tools, calls } = await load({ rootDir, handRoute: HAND, reviewRoute: REVIEW, requireConsult: false, maxRework: 3 }, undefined, { view: () => ({ restrictableNames: new Set(['bash']) }) }, { legacy: true })
   const session = {}
   await approveDesign(tools, session)
   await call(tools, 'smart_execute', {}, session)
@@ -208,7 +211,7 @@ test('an untrustworthy view falls back to the full list instead of denying nothi
 
 test('smart_rework archives the superseded artifacts and needs a reason', async t => {
   const rootDir = scratch(t)
-  const { tools } = await load({ rootDir, handRoute: HAND, requireConsult: false, maxRework: 1 })
+  const { tools } = await load({ rootDir, handRoute: HAND, reviewRoute: REVIEW, requireConsult: false, maxRework: 1 })
   const session = {}
   const taskId = await approveDesign(tools, session)
   await call(tools, 'smart_execute', {}, session)
@@ -230,7 +233,7 @@ test('smart_finish only archives a task past G5, promotes the delivery copy, and
   const rootDir = scratch(t)
   // 调用会话的工作目录 = 交付副本的落点（session.header.cwd，不是 process.cwd()）。
   const workspace = scratch(t)
-  const { tools } = await load({ rootDir, handRoute: HAND, requireConsult: false, maxRework: 3 })
+  const { tools } = await load({ rootDir, handRoute: HAND, reviewRoute: REVIEW, requireConsult: false, maxRework: 3 })
   const session = { header: { cwd: workspace } }
   const taskId = await approveDesign(tools, session)
   await call(tools, 'smart_execute', {}, session)
@@ -257,7 +260,7 @@ test('smart_finish only archives a task past G5, promotes the delivery copy, and
 
   // 工作区取不到 → 大声报错，且绝不静默用 process.cwd() 兜底。
   const bare = scratch(t)
-  const { tools: bareTools } = await load({ rootDir: bare, handRoute: HAND, requireConsult: false, maxRework: 3 })
+  const { tools: bareTools } = await load({ rootDir: bare, handRoute: HAND, reviewRoute: REVIEW, requireConsult: false, maxRework: 3 })
   const bareSession = { header: {} }
   const bareId = await approveDesign(bareTools, bareSession)
   await call(bareTools, 'smart_execute', {}, bareSession)
@@ -275,7 +278,7 @@ test('smart_finish only archives a task past G5, promotes the delivery copy, and
 
 test('the hand prompt carries the dispatch-hygiene contract, and the hand gets no history', async t => {
   const rootDir = scratch(t)
-  const { tools, calls } = await load({ rootDir, handRoute: HAND, requireConsult: false, maxRework: 3 })
+  const { tools, calls } = await load({ rootDir, handRoute: HAND, reviewRoute: REVIEW, requireConsult: false, maxRework: 3 })
   const session = {}
   const taskId = await approveDesign(tools, session)
   await call(tools, 'smart_execute', {}, session)
@@ -306,7 +309,7 @@ test('hand rulings land in state.rulings and the return reports what was dropped
     '- **用 rename 而非 move** — 跨设备 move 会丢权限位 — 权限位丢失需手工重设',
     '- 三段缺两段',
   ].join('\n')
-  const { tools } = await load({ rootDir, handRoute: HAND, requireConsult: false, maxRework: 3 }, report)
+  const { tools } = await load({ rootDir, handRoute: HAND, reviewRoute: REVIEW, requireConsult: false, maxRework: 3 }, report)
   const session = {}
   await approveDesign(tools, session)
   const out = JSON.parse(await call(tools, 'smart_execute', {}, session))
@@ -322,7 +325,7 @@ test('every dispatch prompt carries the hygiene contract — review children inc
   // 评审 child 同样是派发：它若自派评审者、或把长输出贴回正文，就是 superpowers 记的
   // 那次「一次派发 42k 字符、99% 是粘贴历史」的事故形状。四条 prompt 一个不许漏。
   const rootDir = scratch(t)
-  const { tools, calls } = await load({ rootDir, handRoute: HAND, requireConsult: false, maxRework: 3 })
+  const { tools, calls } = await load({ rootDir, handRoute: HAND, reviewRoute: REVIEW, requireConsult: false, maxRework: 3 })
   const session = {}
   await approveDesign(tools, session)
   await call(tools, 'smart_execute', {}, session)
