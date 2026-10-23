@@ -207,9 +207,9 @@ await activation.dispose()
 **发布（tag → OIDC）**：升 `version` → 提交 → 打注释 tag → 推 tag ⇒ `release.yml` 自动
 `npm publish --access public`。
 
-- **暂时不带 `--provenance`**：npm 要求 provenance 的 `repository` 指向 **public** 仓库，
-  本仓现为私有 ⇒ 带 flag 必然失败（0.1.0–0.1.3 的 `dist.attestations` 全为 `None` 是实证）。
-  转 public 那天改回来，注释里写着同样的话。
-- 重推同一个 tag **不会**重跑 workflow。
+- 重推同一个 tag **不会**重跑 workflow ⇒ 要重跑就换一个新 tag。
 - 验收（**换缓存键**）：`/-/package/<name>/dist-tags` 与 packument 各读一次
   `latest == 新版本`、拉 tarball 确认代码在里面。
+
+> **发布参数的当前取舍写在 `release.yml` 的注释里**（那一行要改的时候，人就看在跟前），
+> 不写进本文档 —— 这类「现在是这样、将来会翻」的状态写在文档里只会过期。
