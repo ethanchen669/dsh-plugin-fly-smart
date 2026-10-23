@@ -140,11 +140,11 @@ smart 直接调 `subagents.startActivation({..., agentOptions: route})` —— �
 **路由配置**（已定，2026-10-22）：
 
 ```yaml
-routes:
-  brain:  llm-mioffice/ppio/pa/gpt-6-astra@high        # 决策/产物
-  hand:   llm-mioffice/deepseek/deepseek-flash@max     # 执行
-  review: llm-mioffice/xiaomi/mimo-v2.6-pro@high       # 评审
-  lite:   llm-mioffice/deepseek/deepseek-flash@high    # 机械子代理：探索/取证/并行调查
+routes:   # 形态 provider/model[@effort]；model id 里可以带斜杠（解析只切第一个 `/`）
+  brain:  <provider>/<strong-model>@high    # 决策/产物
+  hand:   <provider>/<fast-model>@max       # 执行
+  review: <provider>/<strong-model>@high    # 评审
+  lite:   <provider>/<fast-model>@high      # 机械子代理：探索/取证/并行调查
 ```
 
 **`lite` 取 `@high` 而非更低**：`lite` 干的三件事都是**准确度优先** —— 探索漏一个文件 ⇒ 计划就错；
@@ -164,7 +164,7 @@ superpowers 的 *"turn count beats token price"* 说的就是这件事：便宜�
 `@max` 能补偿一部分，但要看执行报告的步骤数 —— 若明显偏多，就是换模型的信号。
 
 **验收**：
-0. 四条 route 都能被 `parseRouteValue` 正确解析（多斜杠 model id 如 `ppio/pa/gpt-6-astra`
+0. 四条 route 都能被 `parseRouteValue` 正确解析（多斜杠 model id 如 `vendor/sub/model`
    走 `indexOf('/')` 只切第一个斜杠，完整保留）；每个 `@effort` 都在该模型声明的
    `reasoningEfforts` 里（`deepseek-flash` 有 max/high，`mimo-v2.6-pro` 只有 low/medium/high）。
 

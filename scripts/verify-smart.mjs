@@ -118,7 +118,9 @@ check(`files 覆盖入口及其 import 图（${reachable.size} 个文件）`, mi
 const INTERNAL = [/llm-mioffice/iu, /xiaomi\/mimo-/iu, /gpt-6-astra/iu, /ppio\/pa\//iu]
 // **跳过 scripts/**：本文件自己就带着这串模式（同 dsh-fly 的 shipping-hygiene 跳过 verify-*.mjs），
 // 不跳的话尺子会扫到自己、永远假红。
-const text = [...shipped].filter(rel => /\.(mjs|js|tsx)$/u.test(rel) && !rel.startsWith('scripts/')).map(rel => readFileSync(join(ROOT, rel), 'utf8'))
+// **markdown 也算交付字节**：README.md 是 npm 自动带上的、`assets/*/SKILL.md` 在 `files` 里 ——
+// 只扫 `.mjs|.js|.tsx` 时，README 里写一句内网 provider 就**照旧 22/22**（这次就漏过一次）。
+const text = [...shipped].filter(rel => /\.(mjs|js|tsx|md)$/u.test(rel) && !rel.startsWith('scripts/')).map(rel => readFileSync(join(ROOT, rel), 'utf8'))
 const internalHits = text.flatMap(body => String(body).split('\n').filter(line => INTERNAL.some(pattern => pattern.test(line))))
 check('交付字节里不出现内网 provider / 内网模型 id', internalHits.length === 0, internalHits.slice(0, 2).join(' | '))
 

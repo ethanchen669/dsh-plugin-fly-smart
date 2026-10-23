@@ -199,9 +199,13 @@ test('the manifest ships each file individually and declares a Loader row', () =
   assert.equal(manifest.exports['.'], './index.js')
   assert.equal(manifest.exports['./*'], './*')
   // A bare directory in `files` silently drops the contract for `pack:tar`.
-  for (const entry of ['index.js', 'lib/state.mjs', 'lib/client.js', 'panel', 'cordis.patch.yml']) {
+  // **panel 列成两个运行时文件而不是整个目录**：整目录会把 `panel/tests/` 一起带进 tarball，
+  // 而测试夹具里有内网路由样例 —— 交付字节不该带内网标识（这条踩过：24 处命中）。
+  for (const entry of ['index.js', 'lib/state.mjs', 'lib/client.js', 'panel/reader.js', 'panel/routes.mjs', 'cordis.patch.yml']) {
     assert.ok(manifest.files.includes(entry), `files 少了 ${entry}`)
   }
+  assert.equal(manifest.files.includes('panel'), false, '别把 panel 整目录塞进 files —— panel/tests 会跟着进包')
+  assert.equal(manifest.files.some(entry => entry.includes('tests')), false, '测试不该进 tarball')
   assert.equal(manifest.dsh?.bundle?.patch, './cordis.patch.yml')
   assert.equal(manifest.dsh?.client?.platform, 'web')
   const patch = readFileSync(join(packageRoot, '..', manifest.dsh.bundle.patch), 'utf8')

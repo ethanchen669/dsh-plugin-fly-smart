@@ -12,7 +12,8 @@
   },
   "files": [
     "index.js",
-    "panel",
+    "panel/reader.js",
+    "panel/routes.mjs",
     "lib/state.mjs",
     "lib/client.js",
     "tools",
