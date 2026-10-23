@@ -1,6 +1,6 @@
 {
   "name": "@dsh-fly/dsh-plugin-fly-smart",
-  "version": "0.1.4",
+  "version": "0.2.0",
   "description": "Fly smart 工作流：宿主平面的工作台面板（本包**裸名**这一行，客户端半边登记在它上面）+ agent 平面的阶段机与 smart_* 工具（包内子路径 tools/index.js，由 preset 按会话挂载）。",
   "type": "module",
   "main": "index.js",
