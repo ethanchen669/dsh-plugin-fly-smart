@@ -52,8 +52,11 @@ import {
   taskDir,
   taskStatus,
   writeState,
+  SHAPES,
   assertFinalReviewRoute,
+  briefingSourceFor,
   escalatedEffort,
+  phasesFor,
   planContractGaps,
   recordRuling,
   rulingsFromReport,
@@ -716,4 +719,64 @@ test('a briefing round records whether the review ran escalated, and at which at
   const round2 = again.briefings.brainstorm.rounds.at(-1)
   assert.equal(round2.escalated, false)
   assert.equal(round2.attempts, 0)
+})
+
+// ── S5：shape / size 轻量入口 ────────────────────────────────────────────────
+
+test('phasesFor gives each shape its own ordered sequence', t => {
+  assert.deepEqual(phasesFor({}), SHAPES.feature, '缺省 = 现行为（六相位）')
+  assert.deepEqual(phasesFor({ shape: 'fix' }), ['brainstorm', 'plan', 'executing', 'reviewing'])
+  assert.deepEqual(phasesFor({ shape: 'review' }), ['reviewing'])
+  assert.deepEqual(phasesFor({ shape: 'investigation' }), ['brainstorm'])
+  // optimized 把 acceptance 并进 plan：那一相位**不存在**（不是"存在但不查"）。
+  assert.deepEqual(phasesFor({ shape: 'feature', workflow: 'optimized' }),
+    ['brainstorm', 'design', 'plan', 'executing', 'reviewing'])
+  // 未知 shape 按 feature 兜底，绝不静默少相位。
+  assert.deepEqual(phasesFor({ shape: 'nonsense' }), SHAPES.feature)
+})
+
+test('a task records its shape and size and starts at that shape\'s first phase', t => {
+  const root = scratch(t)
+  const full = createTask(root, { title: '全套' })
+  assert.equal(full.shape, 'feature')
+  assert.equal(full.size, 'full')
+  assert.equal(full.phase, 'brainstorm')
+
+  // `review` 形态直接从 reviewing 起 —— 不走 G1–G4。
+  const only = createTask(root, { title: '只看 diff' }, { shape: 'review' })
+  assert.equal(only.phase, 'reviewing')
+  assert.equal(only.shape, 'review')
+
+  const light = createTask(root, { title: '轻活' }, { shape: 'fix', size: 'light' })
+  assert.equal(light.shape, 'fix')
+  assert.equal(light.size, 'light')
+  // 非法值兜底成默认，不抛、也不悄悄接受。
+  const odd = createTask(root, { title: '怪值' }, { shape: 'nope', size: 'huge' })
+  assert.equal(odd.shape, 'feature')
+  assert.equal(odd.size, 'full')
+})
+
+test('a phase outside the task\'s shape is refused by name, not by "not yet"', t => {
+  const root = scratch(t)
+  const { id } = createTask(root, { title: '修一处' }, { shape: 'fix' })
+  // fix 形态没有 design —— 报错要说清"这个任务不走那一步"，而不是"还没到"。
+  const err = (() => { try { recordArtifact(root, id, 'design', '# 设计'); return null } catch (e) { return e } })()
+  assert.ok(err !== null)
+  assert.match(err.message, /fix/u)
+  assert.match(err.message, /not one of them/u)
+  // 它自己的序列照走（要点确认后门才开）。
+  recordArtifact(root, id, 'brainstorm', '# 脑暴')
+  brief(root, id, 'brainstorm')
+  assert.equal(readState(root, id).awaitingGate, 'G1')
+})
+
+test('briefingSourceFor: light makes every design phase brain-authored', t => {
+  // 零 review child —— 这就是 `size: 'light'` 省的钱。
+  for (const phase of DESIGN_PHASES) assert.equal(briefingSourceFor({ size: 'light' }, phase), 'inline')
+  for (const phase of DESIGN_PHASES) assert.equal(briefingSourceFor({ size: 'full' }, phase), 'review')
+  // optimized 的 brainstorm 本来就是 inline，与 size 无关。
+  assert.equal(briefingSourceFor({ workflow: 'optimized' }, 'brainstorm'), 'inline')
+  assert.equal(briefingSourceFor({ workflow: 'optimized' }, 'plan'), 'review')
+  // 执行与验收不进设计相位的判据。
+  assert.equal(briefingSourceFor({ size: 'light' }, 'executing'), 'review')
 })

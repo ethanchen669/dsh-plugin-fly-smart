@@ -679,3 +679,33 @@ test('model rulings reach the page: a count on the row, the full entries in the 
     rmSync(root, { recursive: true, force: true })
   }
 })
+
+test('the board follows the task shape: a fix task shows no design cells at all', async () => {
+  // shape 裁掉的相位是**不存在** —— 板上不该留一个永远「待做」的格子（S5）。
+  const root = plantRoot()
+  try {
+    const stateFile = join(root, 'tasks', FIXTURE_ID, 'state.json')
+    const state = JSON.parse(readFileSync(stateFile, 'utf8'))
+    state.shape = 'fix'
+    state.phase = 'plan'
+    state.awaitingGate = 'G3'
+    delete state.artifacts.design
+    delete state.artifacts.acceptance
+    writeFileSync(stateFile, `${JSON.stringify(state, null, 2)}\n`, 'utf8')
+
+    const res = await call(makeDeps({ root }), `/fly/smart/task?id=${FIXTURE_ID}`)
+    assert.equal(res.status, 200)
+    assert.equal(res.json.shape, 'fix')
+    assert.deepEqual(res.json.phases, ['brainstorm', 'plan', 'executing', 'reviewing'])
+    const ids = res.json.board.map(entry => entry.id)
+    // design / acceptance 两格没了；done 永远留着（收尾的那格，不是走出来的相位）。
+    assert.equal(ids.includes('design'), false, ids.join(','))
+    assert.equal(ids.includes('acceptance'), false, ids.join(','))
+    assert.equal(ids.includes('done'), true)
+    for (const keep of ['brainstorm', 'plan', 'executing', 'reviewing']) {
+      assert.equal(ids.includes(keep), true, `不该裁掉 ${keep}: ${ids.join(',')}`)
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})

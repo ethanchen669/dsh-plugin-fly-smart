@@ -542,3 +542,46 @@ test('a task with rulings cannot close without the summary covering them', async
   }, session))
   assert.equal(ok.archived, true)
 })
+
+// ── S5 integration：shape / size 真的省下子代理 ───────────────────────────────
+
+test('size "light" spawns zero review children for the design phases', async t => {
+  const rootDir = scratch(t)
+  const { tools, calls } = await load({ rootDir })
+  const session = {}
+  const begun = JSON.parse(await call(tools, 'smart_begin', {
+    title: '加个 helper', shape: 'fix', size: 'light',
+  }, session))
+  assert.equal(begun.shape, 'fix')
+  assert.equal(begun.size, 'light')
+
+  // 设计相位（fix 形态里只有 brainstorm 和 plan）全由 brain 自写要点。
+  await call(tools, 'smart_artifact', { phase: 'brainstorm', markdown: '# 脑暴\n## 问题\n## 候选', briefing: '结论 问题 候选 风险 未决' }, session)
+  await call(tools, 'smart_brief_confirm', {}, session)
+  await call(tools, 'smart_gate', {}, session)                      // G1 → plan
+  await call(tools, 'smart_artifact', { phase: 'plan', markdown: PLAN_DRAFT, briefing: '结论 Global Constraints Review Focus Task 1: 起步 Task 2: 收尾 风险 未决' }, session)
+  await call(tools, 'smart_brief_confirm', {}, session)
+
+  // **零 review child**：这是 `light` 省下的钱。
+  assert.equal(calls.start.length, 0, `不该派任何 child，实际派出 ${calls.start.length}：${calls.start.map(i => i.request.label).join(', ')}`)
+  const status = JSON.parse(await call(tools, 'smart_status', {}, session))
+  assert.equal(status.metrics.reviewSpawns, 0)
+  assert.equal(status.phases.join(','), 'brainstorm,plan,executing,reviewing')
+})
+
+test('shape "review" walks only the review phase and opens only G5', async t => {
+  const rootDir = scratch(t)
+  const { tools } = await load({ rootDir })
+  const session = {}
+  const begun = JSON.parse(await call(tools, 'smart_begin', { title: '看这个 diff', shape: 'review' }, session))
+  assert.equal(begun.phase, 'reviewing')
+  // 直接产 review.md，无 G1–G4。
+  await call(tools, 'smart_artifact', { phase: 'reviewing', markdown: '# 验收结论\n## 逐条\n## 总裁决' }, session)
+  await call(tools, 'smart_brief_confirm', {}, session)
+  const out = JSON.parse(await call(tools, 'smart_gate', {}, session))
+  assert.equal(out.gate, 'G5', JSON.stringify(out))
+  // 相位表里没有设计相位 —— 板上也不会有。
+  const status = JSON.parse(await call(tools, 'smart_status', {}, session))
+  assert.deepEqual(status.gates.map(record => record.gate), ['G5'])
+  assert.equal(status.phases.includes('design'), false)
+})

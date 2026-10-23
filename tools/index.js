@@ -67,7 +67,8 @@ import {
   rulingsFromReport,
   escalatedEffort,
   assertFinalReviewRoute,
-  reworkUsedIn,} from '../lib/state.mjs'
+  reworkUsedIn,
+  briefingSourceFor,} from '../lib/state.mjs'
 
 /** Cordis plugin name, matched by the preset row's `name`. */
 export const name = 'fly-smart'
@@ -645,6 +646,16 @@ export function apply(ctx, rawConfig = {}) {
     description: 'Open a smart-mode task: create its record and enter the brainstorm phase. Smart mode runs a three-model workflow — this session\'s model designs (brainstorm → design → plan → acceptance, each confirmed by the user), the review route briefs and audits, a subagent on the configured hand route executes, then the pair accepts. Use it when the user asks for a smart-mode run or a task big enough to deserve design-before-execution.',
     parameters: {
       title: { type: 'string', description: 'Short task title (also the default task id slug).' },
+      shape: {
+        type: 'string',
+        enum: ['feature', 'fix', 'review', 'investigation'],
+        description: 'What this task is. It decides which phases this task walks: `feature` = the full six (brainstorm → design → plan → acceptance → executing → reviewing); `fix` = brainstorm → plan → executing → reviewing (no design phase — a fix does not need a second exploration); `review` = reviewing only (produce review.md, no G1–G4); `investigation` = brainstorm only (a conclusion, no execution). Default `feature` = the historical behaviour. Recorded with the task: changing the row config later does not re-shape an in-flight task.',
+      },
+      size: {
+        type: 'string',
+        enum: ['light', 'standard', 'full'],
+        description: 'Cost tier. `light` writes every design phase\'s user-facing digest yourself (the brain) — **zero review children**; `standard` and `full` dispatch one per phase. Orthogonal to `shape`: shape is how many steps, size is what each step costs. Default `full` = the historical behaviour.',
+      },
       goal: { type: 'string', description: 'What done looks like, in one or two sentences.' },
       brainstormDepth: { type: 'string', description: 'Optional user-selected depth for brainstorm: light | balanced | deep | exhaustive. Choose based on project type and risk.' },
        taskId: { type: 'string', description: 'Optional explicit id (letters, digits, dot, dash, underscore).' },
@@ -661,7 +672,7 @@ export function apply(ctx, rawConfig = {}) {
       const supportedEfforts = await supportedEffortsOf(exec)
       const effort = resolveBrainstormEffort(brainstormDepth, supportedEfforts)
       const brainRoute = config.brainRoute === undefined ? undefined : { ...config.brainRoute, reasoningEffort: effort.reasoningEffort }
-      const state = createTask(rootDir, args, { ...where ?? {}, maxRework: config.maxRework, workflow: config.workflow, brainstormDepth: effort.depth, brainstormEffort: effort.reasoningEffort, brainRoute })
+      const state = createTask(rootDir, args, { ...where ?? {}, maxRework: config.maxRework, workflow: config.workflow, shape: args.shape, size: args.size, brainstormDepth: effort.depth, brainstormEffort: effort.reasoningEffort, brainRoute })
       remember(exec, state.id)
       return summary(rootDir, state.id, {
         created: true,
@@ -731,14 +742,16 @@ export function apply(ctx, rawConfig = {}) {
       // optimized 工作流的 brainstorm **不派 review 子代理**：候选方案阶段还没有可执行性可审，
       // 那一次评审是纯开销。要点由 brain 自己写（`briefing` 参数），记成 `brain/session` 来源。
       const inline = typeof args.briefing === 'string' && args.briefing.trim() !== '' ? args.briefing : undefined
-      const brainBriefs = state.workflow === 'optimized' && args.phase === 'brainstorm'
+      // 谁写用户要点：`size: 'light'` 的设计相位与 optimized 的 brainstorm 都由 brain 自写
+      // （零 review child）—— 判据集中在 `briefingSourceFor`，不散在各处。
+      const brainBriefs = briefingSourceFor(state, args.phase) === 'inline'
       // 产物落盘即自动生成 briefing（acceptance A1）：这条路是主路径，smart_brief 只做
       // 失败重试/旧任务补生成。生成失败**不冒泡**成落盘失败 —— 产物永远保留（A2）。
       let brief
       if (brainBriefs && inline === undefined) {
         brief = {
           briefingRequired: true,
-          nextStep: 'brainstorm 的用户版要点由你（brain）写：把要点放进 `briefing` 参数，用同一份 markdown 再调一次 smart_artifact —— 记成 brain/session 来源、不派 review 子代理（optimized 工作流）。要点必须逐个点到产物的每个 ## 小节。',
+          nextStep: `这一步（${args.phase}）的用户版要点由你（brain）写：把要点放进 \`briefing\` 参数，用同一份 markdown 再调一次 smart_artifact —— 记成 brain/session 来源、不派 review 子代理（${state.size === 'light' ? 'light 成本档' : 'optimized 工作流'}）。要点必须逐个点到产物的每个 ## 小节。`,
         }
       } else {
         try {

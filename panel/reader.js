@@ -84,8 +84,32 @@ const OPTIMIZED_BOARD = BOARD_PHASES.map(entry => entry.id !== 'acceptance'
  * 这个任务该画哪一套板。未知/缺省 ⇒ v1 的四阶段板（旧任务不受影响）。
  * @param workflow - `state.workflow`（可能为 undefined）。
  */
-export function boardFor(workflow) {
-  return workflow === 'optimized' ? OPTIMIZED_BOARD : BOARD_PHASES
+/**
+ * 相位序列（S5）：`shape` × `workflow` 算出这个任务走哪些相位。
+ *
+ * **与 `lib/state.mjs` 的 `phasesFor` 同一判据**，在这里复制一份是因为面板是宿主平面的
+ * 独立模块（不 import 状态机，避免把 agent 平面的实现拖进宿主）。两份的判据都有测试钉：
+ * 一边改了另一边的用例会红。
+ */
+export function phasesFor(state) {
+  const SHAPES = {
+    feature: ['brainstorm', 'design', 'plan', 'acceptance', 'executing', 'reviewing'],
+    fix: ['brainstorm', 'plan', 'executing', 'reviewing'],
+    review: ['reviewing'],
+    investigation: ['brainstorm'],
+  }
+  const shape = SHAPES[state?.shape] ?? SHAPES.feature
+  return state?.workflow === 'optimized' ? shape.filter(phase => phase !== 'acceptance') : shape
+}
+
+export function boardFor(workflow, phases = null) {
+  const board = workflow === 'optimized' ? OPTIMIZED_BOARD : BOARD_PHASES
+  // shape 裁掉的相位是**不存在**，不该在板上留一个永远「待做」的格子（S5）。
+  // `done` 永远留着：它不是走出来的相位，是收尾的那格。
+  if (!Array.isArray(phases) || phases.length === 0) return board
+  // `mergedInto` 的格子（optimized 的验收设计并入计划）也留着：它的产物**在盘上**，
+  // 用户要能点开看 —— 裁的是「这个任务不走那一步」，不是「那一步的产物不存在」。
+  return board.filter(entry => entry.id === 'done' || entry.mergedInto !== undefined || phases.includes(entry.id))
 }
 
 /**
@@ -427,6 +451,8 @@ export function readTask(rootDir, id) {
     }
   }
 
+  // 相位序列由 shape × workflow 算出（state 里存的是参数，不是序列本身）。
+  const phases = phasesFor(state)
   const consults = readConsults(dir, state)
   const summary = readText(join(dir, 'summary.md'))
   return {
@@ -435,7 +461,11 @@ export function readTask(rootDir, id) {
     state,
     // 面板不必自己猜工作流：reader 把"该画哪套板"一并发过来。
     workflow: state.workflow ?? 'v1',
-    board: boardFor(state.workflow),
+    // shape/size 与这个任务的相位序列（S5）：面板据此画板格。
+    shape: state.shape ?? 'feature',
+    size: state.size ?? 'full',
+    phases,
+    board: boardFor(state.workflow, phases),
     artifacts,
     briefings: briefingReport(dir, state),
     consults,
