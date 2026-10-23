@@ -339,3 +339,48 @@ test('every dispatch prompt carries the hygiene contract — review children inc
     }
   }
 })
+
+// ── S6：评审包 —— 代码变更作为评审物交付 ─────────────────────────────────────
+
+test('the executor gets the baseline it must compare against, and is warned off HEAD~1', async t => {
+  const rootDir = scratch(t)
+  const { tools, calls } = await load({ rootDir, handRoute: HAND, reviewRoute: REVIEW, requireConsult: false, maxRework: 3 })
+  const session = {}
+  await approveDesign(tools, session)
+  await call(tools, 'smart_execute', {}, session)
+
+  const prompt = spawnsOf(calls, 'smart execute').at(-1).request.prompt[0].text
+  // 评审包是**要求**，不是建议：commit 列表 + stat + 全量 diff 落到 evidence/changes.md。
+  for (const want in { 'evidence/changes.md': 1, 'git log --oneline': 1, 'git diff --stat': 1, 'git diff -U10': 1 }) {
+    assert.ok(prompt.includes(want), `execute prompt 缺评审包要求「${want}」`)
+  }
+  // superpowers 的那条教训要原样带上：绝不 HEAD~1。
+  assert.match(prompt, /never `HEAD~1`/u)
+  // 大输出不进正文：评审者读文件，回文只给路径与一行摘要。
+  assert.match(prompt, /do NOT paste the diff into your reply/u)
+})
+
+test('the verifier is pointed at the review package when the executor produced one', async t => {
+  const rootDir = scratch(t)
+  const { tools, calls } = await load({ rootDir, handRoute: HAND, reviewRoute: REVIEW, requireConsult: false, maxRework: 3 })
+  const session = {}
+  const taskId = await approveDesign(tools, session)
+  await call(tools, 'smart_execute', {}, session)
+  await call(tools, 'smart_brief_confirm', {}, session)
+
+  // 执行者按契约落了评审包 ⇒ 评审者被指到它。
+  const { mkdirSync, writeFileSync } = await import('node:fs')
+  const { join } = await import('node:path')
+  mkdirSync(join(rootDir, 'tasks', taskId, 'evidence'), { recursive: true })
+  writeFileSync(join(rootDir, 'tasks', taskId, 'evidence', 'changes.md'), '# 变更\n```diff\n+ x\n```\n')
+
+  await call(tools, 'smart_verify', {}, session)
+  const prompt = spawnsOf(calls, 'smart verify').at(-1).request.prompt[0].text
+  assert.match(prompt, /changes\.md/u, prompt.slice(0, 200))
+  // 判据要写清：执行者的散文是**声称**，diff 才是证据。
+  assert.match(prompt, /the diff is the evidence/u)
+
+  // 没落评审包时不假装有：prompt 里不出现那条指引。
+  const { tools: tools2, calls: calls2 } = await load({ rootDir, handRoute: HAND, reviewRoute: REVIEW, requireConsult: false, maxRework: 3 })
+  assert.ok(calls2.start.length === 0)
+})

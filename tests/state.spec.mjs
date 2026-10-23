@@ -56,6 +56,7 @@ import {
   assertFinalReviewRoute,
   briefingSourceFor,
   escalatedEffort,
+  gitHeadOf,
   phasesFor,
   planContractGaps,
   recordRuling,
@@ -779,4 +780,18 @@ test('briefingSourceFor: light makes every design phase brain-authored', t => {
   assert.equal(briefingSourceFor({ workflow: 'optimized' }, 'plan'), 'review')
   // 执行与验收不进设计相位的判据。
   assert.equal(briefingSourceFor({ size: 'light' }, 'executing'), 'review')
+})
+
+// ── S6：基线（BASE）必须在派发前取 ────────────────────────────────────────────
+
+test('gitHeadOf reads a real repo HEAD without running any command', t => {
+  // 本仓自己就是 git 工作树：40 位 sha，且从子路径也能解（向上找 .git）。
+  const repo = new URL('..', import.meta.url).pathname.replace(/\/$/u, '')
+  const head = gitHeadOf(repo)
+  assert.match(head ?? '', /^[0-9a-f]{40}$/iu, `该解出 40 位 sha：${head}`)
+  assert.equal(gitHeadOf(join(repo, 'lib')), head, '子路径要解出同一个 HEAD')
+  assert.equal(gitHeadOf(join(repo, 'tools')), head)
+  // 非 git 目录 ⇒ null（不是错）；读不出也不抛。
+  assert.equal(gitHeadOf(tmpdir()), null)
+  assert.equal(gitHeadOf('/nope/nope/nope'), null)
 })

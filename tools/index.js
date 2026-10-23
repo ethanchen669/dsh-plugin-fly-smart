@@ -16,7 +16,7 @@
  * @module dsh-plugin-fly-smart
  */
 
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { defineTool } from '@deepseek-ai/dsh-tools'
@@ -68,7 +68,8 @@ import {
   escalatedEffort,
   assertFinalReviewRoute,
   reworkUsedIn,
-  briefingSourceFor,} from '../lib/state.mjs'
+  briefingSourceFor,
+  gitHeadOf,} from '../lib/state.mjs'
 
 /** Cordis plugin name, matched by the preset row's `name`. */
 export const name = 'fly-smart'
@@ -506,7 +507,7 @@ export function apply(ctx, rawConfig = {}) {
   ].filter(line => line !== '').join('\n')
 
   /** The executor's briefing: the plan and the acceptance contract, nothing else. */
-  const executePrompt = ({ state, plan, acceptance, instructions }) => [
+  const executePrompt = ({ state, plan, acceptance, instructions, base }) => [
     'You are the *hand* model executing an approved plan. The design is settled; your job is to carry it out and report honestly what happened.',
     '',
     `Task: ${state.title}`,
@@ -522,6 +523,17 @@ export function apply(ctx, rawConfig = {}) {
     '',
     instructions === undefined || instructions.trim() === '' ? '' : `Extra instructions for this run: ${instructions.trim()}`,
     '',
+    // 评审包（S6）：代码变更要作为**评审物**交付，而不是只在正文里描述。
+    base === undefined || base === null
+      ? 'Baseline: this is not a git worktree (or HEAD is unreadable), so compare against the working tree — and never `HEAD~1`: it silently drops every commit but the last of a multi-commit task.'
+      : `Baseline for this run (recorded before dispatch): \`${base}\` — compare against exactly this, never \`HEAD~1\` (that silently drops every commit but the last of a multi-commit task).`,
+    '',
+    'Review package (required): before you report, write the code changes to a file at `evidence/changes.md` under this task\'s directory, containing',
+    '1. `git log --oneline <BASE>..HEAD` (or the working-tree equivalent if you did not commit),',
+    '2. `git diff --stat <BASE>`,',
+    '3. `git diff -U10 <BASE>` for every file you touched.',
+    'Reply with the file\'s path and a one-line summary; do NOT paste the diff into your reply — it is re-read on every later turn of the parent session. The reviewer reads that file.',
+    '',
     'Work through the plan step by step with your tools. Then report in markdown:',
     '1. each plan step with its outcome (done / skipped / failed) and the evidence (paths, commands, output);',
     '2. anything you had to deviate from, and why;',
@@ -536,7 +548,7 @@ export function apply(ctx, rawConfig = {}) {
   ].filter(line => line !== '').join('\n')
 
   /** The verifier's briefing: an adversarial check against the acceptance contract. */
-  const verifyPrompt = ({ state, acceptance, report, focus }) => [
+  const verifyPrompt = ({ state, acceptance, report, focus, reviewPackage }) => [
     'You are the *review* model gathering acceptance evidence — independent of the executor who wrote the report below. You did not write the acceptance criteria and you are not here to be agreeable: your job is to find out whether each criterion is actually met, by inspection.',
     '',
     `Task: ${state.title}`,
@@ -547,6 +559,8 @@ export function apply(ctx, rawConfig = {}) {
     '--- end acceptance ---',
     '',
     ...DISPATCH_HYGIENE,
+    // 评审包（S6）：**代码变更**本身是评审物，不只是执行者对它的描述。
+    reviewPackage === undefined || reviewPackage === null ? '' : `Review package (the actual code changes): read \`${reviewPackage}\` — the commit list, the stat and the full diff the executor produced. Review the diff against each acceptance criterion; the executor's prose is a claim, the diff is the evidence.`,
     '',
     '--- execution report (what the executor claims) ---',
     report.trimEnd(),
@@ -1319,13 +1333,15 @@ export function apply(ctx, rawConfig = {}) {
       const acceptance = readArtifact(rootDir, id, 'acceptance')
       if (plan === null || acceptance === null) throw new Error('smart: execution needs both plan.md and acceptance.md on disk')
 
+      // **派发前**取基线（superpowers 的警告：派发后再算会漏掉多 commit 任务的前面那些）。
+      const base = gitHeadOf(rootDir)
       const { route, body } = await runHand(exec, {
         label: `smart execute · ${id}`,
-        prompt: executePrompt({ state, plan, acceptance, instructions: args.instructions }),
+        prompt: executePrompt({ state, plan, acceptance, instructions: args.instructions, base }),
         // 拍板 2：执行与会话同权（只挡住工作流工具，不挡干活的能力）。
         toolFilter: { deny: SMART_TOOL_NAMES },
       })
-      const report = `# 执行报告\n\n> 执行模型：${route.provider}/${route.model}\n\n${body.trim()}\n`
+      const report = `# 执行报告\n\n> 执行模型：${route.provider}/${route.model}\n${base === null ? '' : `> 基线：\`${base}\`（派发前取）\n`}\n${body.trim()}\n`
       const next = recordArtifact(rootDir, id, 'executing', report)
       // hand 在执行中自己定下的裁决进 state.rulings（`## Rulings` 小节）：拆不出
       // 「决定 — 为什么 — 错了代价」三段的整条丢弃并照实计数 —— 宁可少记，
@@ -1374,10 +1390,14 @@ export function apply(ctx, rawConfig = {}) {
       const acceptance = readArtifact(rootDir, id, 'acceptance')
       const report = readArtifact(rootDir, id, 'executing')
       if (acceptance === null || report === null) throw new Error('smart: verification needs acceptance.md and the execution report on disk')
+      // 评审包（S6）：执行者按契约落的 `evidence/changes.md` —— 在就交给评审者，
+      // 不在就照实说没有（不是"假装有"，也不是替它编一份）。
+      const reviewPackagePath = join(taskDir(rootDir, id), 'evidence', 'changes.md')
+      const reviewPackage = existsSync(reviewPackagePath) ? reviewPackagePath : null
 
       const { route, body } = await runHand(exec, {
         label: `smart verify · ${id}`,
-        prompt: verifyPrompt({ state, acceptance, report, focus: args.focus }),
+        prompt: verifyPrompt({ state, acceptance, report, focus: args.focus, reviewPackage }),
         toolFilter: verifyToolFilter(exec.agent),
         role: 'review',
         phase: 'reviewing',
