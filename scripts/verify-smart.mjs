@@ -128,6 +128,23 @@ check('交付字节里不出现内网 provider / 内网模型 id', internalHits.
 const url = manifest.repository?.url ?? ''
 check('repository.url 指本仓', url.endsWith('github.com/ethanchen669/dsh-plugin-fly-smart.git'), url)
 
+// ⑤.b peer 范围要吃得到 harness 的**预发布**构建
+//
+// 市场规范点名的那个坑：node-semver 只在「范围里某个比较符与该版本的 major.minor.patch
+// **元组完全一致**、且自身带预发布标签」时才放行预发布版本。所以 `^0.2.0-rc.2` 吃得到
+// `0.2.0-rc.2` 与 `0.2.1`（稳定），却吃不到 **`0.2.1-rc.2`** —— 而那正是 harness 现在的
+// 版本，用户装包会撞 ERESOLVE。写法要带**显式预发布分支**：
+//   `>=0.2.0-rc.1 <0.2.1 || >=0.2.1-rc.1 <0.3.0-0`
+const peers = manifest.peerDependencies ?? {}
+const shorthandPrerelease = Object.entries(peers)
+  .filter(([name, range]) => name.startsWith('@deepseek-ai/') && /^[~^]/u.test(String(range)) && /-[0-9A-Za-z]/u.test(String(range)))
+  .map(([name, range]) => `${name}=${range}`)
+check('peer 范围不许用带预发布的 ^/~ 简写（会静默排除 harness 的预发布构建）', shorthandPrerelease.length === 0, shorthandPrerelease.join(', '))
+const noBranch = Object.entries(peers)
+  .filter(([name, range]) => name.startsWith('@deepseek-ai/') && !String(range).includes('||'))
+  .map(([name, range]) => `${name}=${range}`)
+check('peer 范围带显式预发布分支（|| 分支）', noBranch.length === 0, noBranch.join(', '))
+
 // ⑥ 必须文件存在
 for (const rel of ['index.js', 'lib/state.mjs', 'README.md', 'LICENSE', '.gitignore']) {
   check(`存在 ${rel}`, existsSync(join(ROOT, rel)))
