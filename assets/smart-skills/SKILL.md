@@ -36,6 +36,8 @@ description: Use when starting any task in this profile — establishes how to f
 - **收到评审意见** → `smart-review-receive`
 - **开始特性工作** → `smart-worktree`
 - **2+ 个互不相干的任务** → `smart-parallel`
+- **创建/修改技能** → `smart-write-skill`
+- **某个 smart 会话出了问题**（卡住 / 门不开 / 重复派发 / 花太多）→ `smart-diagnose`
 
 ## 什么时候才开 smart 任务
 
@@ -50,6 +52,8 @@ description: Use when starting any task in this profile — establishes how to f
 | 调查个问题、出个结论 | `smart_begin({ shape: 'investigation' })` |
 | 小改动 | `smart_begin({ size: 'light' })` |
 | 完整交付一个功能 | `smart_begin({ shape: 'feature', size: 'full' })` |
+| 写个技能 | `smart-write-skill`（**不开任务**） |
+| 会话出了问题、想查为什么 | `smart-diagnose`（**不开任务**） |
 
 **判断依据**：只有当这件事需要**别人的把关**（用户门 G1–G5）或**留档交付**时，才值得开任务。
 排查、写测试、验证声明 —— 这些用技能就够。

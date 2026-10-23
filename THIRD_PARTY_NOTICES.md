@@ -52,6 +52,9 @@ SOFTWARE.
 | `assets/smart-review-receive/` | `skills/receiving-code-review/` | 移植 |
 | `assets/smart-plan/` | `skills/writing-plans/` | 移植（文档契约） |
 | `assets/smart-worktree/` | `skills/using-git-worktrees/` | 移植 |
+| `assets/smart-parallel/` | `skills/dispatching-parallel-agents/` | 移植 |
+| `assets/smart-write-skill/` | `skills/writing-skills/` | 移植（含 references 摘要） |
+| `assets/smart-diagnose/` | `skills/diagnosing-superpowers/` | **改写适配**（诊断对象换成 smart 工作流） |
 
 **未移植但用 smart 现有机制替代**的 superpowers 技能（无版权文本随包分发，但方法论来源相同）：
 
@@ -62,6 +65,7 @@ SOFTWARE.
 | `requesting-code-review` | `smart_consult` + `smart_verify` |
 | `finishing-a-development-branch` | `smart_finish` |
 | `brainstorming` | `brainstorm` 相位 + `smart_brief` 对话回路 |
+| `diagnosing-superpowers` | `smart-diagnose`（改写适配） |
 
 ### 命名
 

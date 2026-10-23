@@ -228,12 +228,12 @@ test('the host row claims the /fly/smart namespace and publishes its service', a
       skills: { registerProvider: create => skillProviders.push(create()) },
     }, { rootDir: root })
 
-    // 自带技能真的被登记：7 个移植技能一个不能少，且每个都带 description
+    // 自带技能真的被登记：10 个移植/改写技能一个不能少，且每个都带 description
     //（技能目录只看 description —— 缺了 = 用户搜不到 = 本次移植白做）。
     assert.equal(skillProviders.length, 1)
     assert.equal(skillProviders[0].name, 'fly-smart')
     const skills = await skillProviders[0].list()
-    const expected = ['smart-debug', 'smart-plan', 'smart-review-receive', 'smart-skills', 'smart-tdd', 'smart-verify-claim', 'smart-worktree']
+    const expected = ['smart-debug', 'smart-diagnose', 'smart-parallel', 'smart-plan', 'smart-review-receive', 'smart-skills', 'smart-tdd', 'smart-verify-claim', 'smart-worktree', 'smart-write-skill']
     assert.deepEqual(skills.map(entry => entry.name).sort(), expected)
     for (const entry of skills) {
       assert.equal(typeof entry.description, 'string')
