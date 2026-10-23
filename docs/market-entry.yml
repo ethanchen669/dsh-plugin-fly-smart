@@ -1,0 +1,32 @@
+# 市场投稿条目（**不是**放在本仓运行时里的文件）
+#
+# 目标路径：市场仓 `awesome-dsh-plugin` 的
+#   data/plugins/ethanchen669__dsh-plugin-fly-smart.yml
+# 一个文件就是全部投稿；两个 README 由市场仓的脚本生成，不要手工编辑。
+#
+# 规范：https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/blob/main/contributing.md
+#  · `description.en` 必填、句号结尾；`zh` 可选（缺了维护者会补）
+#  · 描述含 `: `（冒号+空格）必须加引号 —— 否则 YAML 当成嵌套键
+#  · 描述**必须属实**：数字与 API 名会被对着代码核。夸大是被打回的主要原因
+#  · 只说功能，不带营销词 / 最高级
+#
+# 投稿前置（在 GitHub 仓库设置里做）：
+#   1. 仓库转 public
+#   2. 加 topic `dsh-plugin`
+#   3. 跑完 Public 试运行（docs/public-trial.md）
+
+url: https://github.com/ethanchen669/dsh-plugin-fly-smart
+name: ethanchen669/dsh-plugin-fly-smart
+category: workflow
+description:
+  en: 'Three-model workflow with user-confirmed gates and 10 standalone skills for debugging, TDD, planning and review; ported from obra/superpowers (MIT) and extended with a phase machine, decision records and a workbench panel.'
+  zh: '三模型工作流，每道门由用户确认；另附 10 个可独立触发的技能，覆盖调试、TDD、计划与评审。移植自 obra/superpowers（MIT），并扩展出阶段机、裁决留痕与工作台面板。'
+
+# 可选：市场卡片图标（GitHub 托管的方形位图，约 96px 显示；SVG 与第三方图床会被拒）。
+# 不写则回退到你的 GitHub 头像。
+# icon: https://raw.githubusercontent.com/ethanchen669/dsh-plugin-fly-smart/main/assets/icon-180.png
+
+# 可选：截图（1–8 张）。**放在本仓**，路径相对本文件；也可以是 GitHub 托管的绝对 https 链接。
+# 市场会从 README 自动抽图，声明只是让你控制顺序与取舍。
+# 本仓的 screenshots.json 形如：
+#   [ "assets/screenshot-board.png", "assets/screenshot-plan.png" ]
