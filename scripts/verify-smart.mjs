@@ -222,9 +222,13 @@ const noBranch = Object.entries(peers)
   .map(([name, range]) => `${name}=${range}`)
 check('peer 范围带显式预发布分支（|| 分支）', noBranch.length === 0, noBranch.join(', '))
 
-// ⑥ 必须文件存在
-for (const rel of ['index.js', 'lib/state.mjs', 'README.md', 'LICENSE', '.gitignore']) {
+// ⑥ 必须文件存在（0.3.0：lib/state.mjs 与 panel/reader.js 随工作流删除，
+//   留下的是派发核心与文档契约这两个自包含模块）
+for (const rel of ['index.js', 'lib/dispatch.mjs', 'lib/doc-contract.mjs', 'README.md', 'LICENSE', '.gitignore']) {
   check(`存在 ${rel}`, existsSync(join(ROOT, rel)))
+}
+for (const rel of ['lib/state.mjs', 'panel/reader.js']) {
+  check(`已删除 ${rel}（工作流退役）`, !existsSync(join(ROOT, rel)))
 }
 
 // ⑦ 面板**自带**设计系统（web 上没有工作台外壳时它也得长得对）

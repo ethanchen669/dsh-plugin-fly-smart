@@ -12,9 +12,9 @@
   },
   "files": [
     "index.js",
-    "panel/reader.js",
     "panel/routes.mjs",
-    "lib/state.mjs",
+    "lib/dispatch.mjs",
+    "lib/doc-contract.mjs",
     "lib/client.js",
     "tools",
     "cordis.patch.yml",
