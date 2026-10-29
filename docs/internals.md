@@ -37,6 +37,9 @@ preset（行配置 handRoute / reviewRoute）
 
 - **review 回落**：没有显式 review 时复用 hand，`source` 报 `<session|default>-fallback`。
   这是"执行者在审自己"的信号，调用方必须能看见 —— 所以 `source` 是回执的一部分，不是日志。
+- **brain 不可派发**：`brain` 是**会话模型**（决策 / 产物 / 与用户对话），不是可派的位子；
+  镜像里的 `brain` 与行配置的 `brainRoute` 只做只读兼容展示（`consumer: null`）。
+  派发角色只有 `hand` / `review` / `lite`。
 - **一致性**：宿主面 `readRoutesConfig`（`index.js`）与工具面 `resolveRoute`（`lib/dispatch.mjs`）
   是两套实现，`tests/dispatch.spec.mjs` 用同一份镜像逐字段对拍，防止"页面说 X、工具用 Y"。
 

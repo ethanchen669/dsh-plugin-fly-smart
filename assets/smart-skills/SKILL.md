@@ -98,6 +98,9 @@ description: Use when starting any task in this profile — establishes how to f
 记住 *"turn count beats token price"*：便宜模型在多步工作上常花 2–3 倍轮次，
 总成本反而更高。纯机械、一步到位的才用 `lite`。
 
+**brain 不是可派发角色**：想方案、做设计、写计划这些**在会话里做**（会话模型就是 brain）；
+`smart_dispatch` 只有 `hand` / `review` / `lite` 三个角色。
+
 ## 用户指令
 
 用户的直接要求（AGENTS.md、会话里的明确指示）**优先于技能**，技能又优先于默认行为。
