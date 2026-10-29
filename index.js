@@ -394,7 +394,9 @@ export async function answerSmartRequest(deps, req, res) {
     }
     // 一条写路径服务两个角色：`role` 指名要写哪一条（缺省看有没有 review 字段，再退 hand）。
     // 老客户端的 `{ hand, scope, sessionId }` 因此逐字节照旧可用。
-    const role = payload.role === 'review' || typeof payload.review === 'string' ? 'review' : 'hand'
+    const role = payload.role === 'lite'
+      ? 'lite'
+      : payload.role === 'review' || typeof payload.review === 'string' ? 'review' : 'hand'
     const value = payload[role]
     if (typeof value !== 'string') {
       json(400, { error: `smart routes: ${role} 必须是字符串（空串 = 删除该层的路由）` })

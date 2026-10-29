@@ -311,6 +311,27 @@ test('the review route is writable through the same handler the panel posts to',
   assert.match(bogus.json.error, /review/u, '错误文案必须列出 review，否则用户不知道新字段存在')
 })
 
+test('the lite role is writable through the same handler and survives a session write', async t => {
+  const mirrorPath = scratchMirror(t)
+  const deps = makeDeps({ mirrorPath })
+  const post = payload => call(deps, '/fly/smart/routes', { method: 'POST', body: JSON.stringify(payload), headers: { 'content-type': 'application/json' } })
+
+  const def = await post({ lite: 'cheap/fast', role: 'lite', scope: 'default' })
+  assert.equal(def.status, 200, def.text)
+  assert.equal(def.json.source, 'default')
+  assert.equal(JSON.parse(readFileSync(mirrorPath, 'utf8')).default.lite, 'cheap/fast')
+
+  const ses = await post({ lite: 'cheap/session', role: 'lite', scope: 'session', sessionId: 'session-9' })
+  assert.equal(ses.json.source, 'session')
+  const doc = JSON.parse(readFileSync(mirrorPath, 'utf8'))
+  assert.equal(doc.sessions['session-9'].lite, 'cheap/session')
+  assert.equal(doc.default.lite, 'cheap/fast', 'a session write must not disturb the default layer')
+
+  const read = await call(deps, '/fly/smart/routes?sessionId=session-9')
+  assert.equal(read.json.effectiveLite.lite, 'cheap/session')
+  assert.equal(read.json.effectiveLite.source, 'session')
+})
+
 test('the v2 document: three layers, the legacy top-level mirror, and `""` as the only delete', async t => {
   const mirrorPath = scratchMirror(t)
   const deps = makeDeps({ root: scratch(t), mirrorPath })
