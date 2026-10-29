@@ -227,21 +227,27 @@ function startStub(seen) {
   }
 }
 
+/** 宿主校验身份用的那枚活 agent（`request.parent` 必须是它本身）。 */
+const LIVE_PARENT = { id: 'session-live', session: { id: 'session-live' } }
+
 test('dispatch honours both host contracts and passes the route as agentOptions', async () => {
   writeMirror({ version: 2, default: { hand: 'p/m' } })
   const seenNew = []
-  const fresh = await dispatchOnRoute({ subagents: activationStub(seenNew), role: 'hand', prompt: 'hi', mirrorPath: SCRATCH_MIRROR })
+  const fresh = await dispatchOnRoute({ subagents: activationStub(seenNew), role: 'hand', prompt: 'hi', parent: LIVE_PARENT, mirrorPath: SCRATCH_MIRROR })
   assert.equal(fresh.text, 'done')
   assert.deepEqual(fresh.route, { provider: 'p', model: 'm' })
   assert.deepEqual(seenNew[0].request.agentOptions, { provider: 'p', model: 'm' })
   assert.equal(seenNew[0].provider, 'spawn')
   assert.equal(seenNew[0].delivery, 'caller')
+  // 0.3.1 的真正缺陷：`request.parent` 没传 ⇒ 宿主里 `parent.id` 抛 TypeError。
+  assert.equal(seenNew[0].request.parent, LIVE_PARENT, 'request.parent must be the live agent object itself')
   assert.ok(seenNew.some(entry => entry.disposed === true), 'the child is disposed')
 
   const seenOld = []
-  const legacy = await dispatchOnRoute({ subagents: startStub(seenOld), role: 'hand', prompt: 'hi', mirrorPath: SCRATCH_MIRROR })
+  const legacy = await dispatchOnRoute({ subagents: startStub(seenOld), role: 'hand', prompt: 'hi', parent: LIVE_PARENT, mirrorPath: SCRATCH_MIRROR })
   assert.equal(legacy.text, 'old-host')
   assert.equal(seenOld[0].name, 'spawn')
+  assert.equal(seenOld[0].request.parent, LIVE_PARENT)
   assert.deepEqual(seenOld[0].request.agentOptions, { provider: 'p', model: 'm' })
   assert.ok(seenOld.some(entry => entry.disposed === true))
   cleanMirror()
@@ -250,21 +256,26 @@ test('dispatch honours both host contracts and passes the route as agentOptions'
 test('dispatch refuses loudly: no route, no service, empty output, non-completed run', async () => {
   cleanMirror()
   await assert.rejects(
-    () => dispatchOnRoute({ subagents: activationStub([]), role: 'hand', prompt: 'hi', mirrorPath: SCRATCH_MIRROR }),
+    () => dispatchOnRoute({ subagents: activationStub([]), role: 'hand', prompt: 'hi', parent: LIVE_PARENT, mirrorPath: SCRATCH_MIRROR }),
     /no hand model is configured/,
   )
   await assert.rejects(() => startChild(undefined, { label: 'x', prompt: 'p' }), /subagent service is not available/)
-  await assert.rejects(() => startChild({}, { label: 'x', prompt: 'p' }), /neither startActivation\(\) nor start\(\)/)
+  await assert.rejects(() => startChild({}, { label: 'x', prompt: 'p', parent: LIVE_PARENT }), /neither startActivation\(\) nor start\(\)/)
+  // 少了 parent ⇒ 我们自己的大声报错，不是宿主那句读不懂的 TypeError。
+  await assert.rejects(
+    () => startChild({ startActivation: async () => ({}) }, { label: 'x', prompt: 'p' }),
+    /dispatch needs the calling agent as .request\.parent./,
+  )
 
   writeMirror({ version: 2, default: { hand: 'p/m' } })
   const empty = {
     startActivation: async () => ({ childId: 'c', result: async () => ({ output: [], stopReason: 'completed' }), dispose: async () => {} }),
   }
-  await assert.rejects(() => dispatchOnRoute({ subagents: empty, role: 'hand', prompt: 'hi', mirrorPath: SCRATCH_MIRROR }), /returned nothing/)
+  await assert.rejects(() => dispatchOnRoute({ subagents: empty, role: 'hand', prompt: 'hi', parent: LIVE_PARENT, mirrorPath: SCRATCH_MIRROR }), /returned nothing/)
   const failed = {
     startActivation: async () => ({ childId: 'c', result: async () => ({ output: [], stopReason: 'error', diagnostic: 'boom' }), dispose: async () => {} }),
   }
-  await assert.rejects(() => dispatchOnRoute({ subagents: failed, role: 'hand', prompt: 'hi', mirrorPath: SCRATCH_MIRROR }), /ended as "error": boom/)
+  await assert.rejects(() => dispatchOnRoute({ subagents: failed, role: 'hand', prompt: 'hi', parent: LIVE_PARENT, mirrorPath: SCRATCH_MIRROR }), /ended as "error": boom/)
   cleanMirror()
 })
 

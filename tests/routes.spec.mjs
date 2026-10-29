@@ -93,7 +93,9 @@ async function load(config = {}) {
   return { tools, calls }
 }
 
-const exec = (session = {}) => ({ signal: undefined, agent: { session } })
+// 上游按 `parent.id` 校验活 agent（`dsh-subagent` 的 startActivation），所以信封里的
+// agent 必须带 id —— 0.3.1 的缺陷正是这条链上少了一个字段，桩却都不看它。
+const exec = (session = {}) => ({ signal: undefined, agent: { id: session.id ?? 'session-1', session } })
 const call = (tools, name, args, session) => tools.get(name).execute(args, exec(session))
 
 test('parseRouteValue accepts the settings form and the preset shape alike', () => {

@@ -112,6 +112,10 @@ export function apply(ctx, rawConfig = {}) {
         prompt,
         label: typeof args.label === 'string' && args.label.trim() !== '' ? args.label.trim() : 'smart_dispatch',
         config,
+        // 上游 0.2.x 契约要求 `request.parent` = **活着的那个父 agent** 本身（它按
+        // `parent.id` 去注册表里比对身份），不是 id、不是 session。少了它，报错在
+        // 宿主内部变成 `Cannot read properties of undefined (reading 'id')`。
+        parent: exec?.agent,
         session: exec?.agent?.session,
         mirrorPath: resolveMirrorPath(),
       })

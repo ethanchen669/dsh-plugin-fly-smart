@@ -37,14 +37,43 @@ function toolHarness(services = {}) {
   return registered
 }
 
-/** The execution envelope a tool's `execute(args, exec)` receives. */
-const execFor = (header = {}) => ({ agent: { session: { id: 'session-1', header } }, signal: undefined })
+/**
+ * The live agent registry the 0.2.x host verifies against (`ctx.agents.get(id)`).
+ *
+ * `execFor()` registers the agent it hands out, so a stub can do the host's own
+ * identity check (`registry.get(request.parent.id) === request.parent`) and still
+ * stay readable in every test.
+ */
+const LIVE_AGENTS = new Map()
 
-/** A 0.2.x subagent stub: `startActivation` → `{ childId, result(): Promise, dispose() }`. */
-function activationStub(seen, text = 'ok') {
+/** The execution envelope a tool's `execute(args, exec)` receives. */
+const execFor = (header = {}) => {
+  const agent = { id: 'session-1', session: { id: 'session-1', header } }
+  LIVE_AGENTS.set(agent.id, agent)
+  return { agent, signal: undefined }
+}
+
+/**
+ * A 0.2.x subagent stub — **同形**：它复刻宿主那句身份校验本身。
+ *
+ * 上游 `dsh-subagent/lib/index.js:3045` 是
+ *   `if (this.ctx.get("agents")?.get(spec.request.parent.id) !== spec.request.parent) throw …`
+ * 即 `request.parent` 必须**在**、而且是注册表里那一枚活 agent。桩不写这一句时，
+ * 少了 parent 的请求照样绿 —— 0.3.1 就是这样把 `Cannot read properties of undefined
+ * (reading 'id')` 发到线上的。
+ *
+ * @param seen - collects every request (assertions read it).
+ * @param text - child's reply.
+ * @param registry - the live agents map the stub checks identity against.
+ */
+function activationStub(seen, text = 'ok', registry = LIVE_AGENTS) {
   return {
     startActivation: async request => {
       seen.push(request)
+      // 逐字复刻上游那一句：parent 缺了就在这里 TypeError（不是"看起来没问题"）。
+      if (registry.get(request.request.parent.id) !== request.request.parent) {
+        throw new Error('subagent creation requires the exact live parent agent')
+      }
       return {
         childId: 'child-1',
         result: async () => ({ output: [{ type: 'text', text }], stopReason: 'completed' }),
@@ -58,6 +87,8 @@ function activationStub(seen, text = 'ok') {
 function startStub(seen, text = 'old') {
   return {
     start: async (provider, request) => {
+      // 老契约同样从这里读 parent（`startExternal` 第一行）。
+      if (request.parent === undefined) throw new TypeError("Cannot read properties of undefined (reading 'id')")
       seen.push({ provider, request })
       return { result: async () => ({ output: [{ type: 'text', text }], stopReason: 'completed' }), dispose: async () => {} }
     },
