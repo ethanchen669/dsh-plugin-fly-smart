@@ -589,7 +589,7 @@ export function SmartPanel() {
   useEffect(() => { void load() }, [load])
 
   return (
-    <section className="fly-panel" data-probe="smart-panel" ref={rootRef}>
+    <section className="fly-panel" data-plugin={PACKAGE} data-probe="smart-panel" ref={rootRef}>
       <h1>Smart</h1>
       <p className="fly-sub">{'派发子代理时使用的模型路由。任务的计划与验收就是普通 markdown（docs/plans/），用 smart_check_doc 校验契约。'}</p>
       {notice === null ? null : <p className="fly-note-error" data-probe="route-notice">{notice}</p>}
