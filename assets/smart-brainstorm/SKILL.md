@@ -41,7 +41,7 @@ NO PLAN BEFORE THE TABLE IS SETTLED
 3. 逐候选写代价与适用条件（什么时候选它）。
 4. 写当前倾向 + 理由。
 5. 未决问题问用户；自己能定的定掉。
-6. 表定稿 → 转 `smart-plan`；这条取舍要长期留档 → `smart-adr`。
+6. 表定稿 → 转 `smart-design` 定形状（再转 `smart-plan` 拆任务）；这条取舍要长期留档 → `smart-adr`。
 
 ## Red Flags —— 停下
 

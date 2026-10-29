@@ -28,7 +28,7 @@ description: Use when starting any task in this profile — establishes how to f
 
 多个技能都适用时，**流程技能在前** —— 它们定路子，实现类技能再去执行。
 
-- **「建个东西」**（加功能、做组件、改行为）→ 先 `smart-brainstorm`，设计取舍留档 `smart-adr`，再写计划（`smart-plan`）
+- **「建个东西」**（加功能、做组件、改行为）→ 先 `smart-brainstorm` 定方案，再 `smart-design` 定形状，取舍留档 `smart-adr`，最后写计划（`smart-plan`）
 - **「修个 bug」/ 行为不对** → 先 `smart-debug`，修完用 `smart-verify-claim` 收尾
 - **要写多步计划** → `smart-plan`
 - **写任何生产代码之前** → `smart-tdd`
@@ -51,6 +51,7 @@ description: Use when starting any task in this profile — establishes how to f
 | 写个技能 | `smart-write-skill`（不写文件） |
 | 看看这个 diff / 这段改动 | `smart-review`（不写文件，出评审报告） |
 | 想清方案、摆出候选再选 | `smart-brainstorm`（不写文件，出决策表） |
+| 方案定了、要展开成实现形状 | `smart-design`（组件/接口/数据/错误五问） |
 | 设计取舍要长期留档 | `smart-adr`（ADR-lite 五段，写进 docs/adr/ 或计划的约束节） |
 | 多步实现、别人（或另一个模型）要照着干 | `smart-plan` → 写 `docs/plans/<日期>-<名字>.md` |
 | 要交付、要人验收 | 再写 `<同名>-acceptance.md`，收尾用 `smart-verify-claim` |

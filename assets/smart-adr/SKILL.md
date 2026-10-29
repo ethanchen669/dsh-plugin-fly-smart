@@ -51,5 +51,6 @@ AN ADR IS THE DECISION, NOT THE CONVERSATION
 
 ## 与其它技能的关系
 
-- **上游**：`smart-brainstorm` 的决策表拍板后写 ADR；ADR 的约束是 `smart-plan` 的 `## Global Constraints` 的来源。
+- **上游**：`smart-brainstorm` 的决策表拍板后写 ADR；`smart-design` 的「排除了什么」指向本技能。
+- **下游**：ADR 的硬约束是 `smart-plan` 的 `## Global Constraints` 的来源。
 - **下游**：实现改道、约束变化时按 Revisit trigger 重开 ADR（写新一份，不改旧的）。

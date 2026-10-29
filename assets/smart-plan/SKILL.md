@@ -180,6 +180,10 @@ git commit -m "feat: add specific feature"
 
 自己执行就按本计划的任务序号 + 复选框推进，每个任务走完 Step 的测试循环再提交；派给 hand 模型则把整个任务块交给 `smart_dispatch`，收回后用 `smart-verify-claim` 对账。
 
+## 与其它技能的关系
+
+上游：`smart-brainstorm`（方案）→ `smart-design`（形状）→ 本技能（步骤）；计划每个任务的 `**Interfaces:**` 逐字抄设计的「接口」节，不许另发明一套。
+
 ## 与工具面的关系
 
 `smart_check_doc` 在写入后校验本文档契约（Interfaces / Global Constraints / Review Focus）；`smart_dispatch({ role: 'review' })` 可以把计划派给评审路由看可行性。

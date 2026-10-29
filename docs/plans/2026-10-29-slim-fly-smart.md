@@ -161,9 +161,10 @@
 - [ ] **Step 3: 跑钉子 + 走查** —— `node scripts/verify-smart.mjs` 绿；逐技能通读派发段，确认指挥的工具都存在（这一步是人工走查，结论写进提交信息）。
 - [ ] **Step 4: 提交** —— `docs(skills): 引用清洗与产物约定（docs/plans 两份制），技能面与 0.3.0 工具面对齐`
 
-### Task 7: 设计期技能三件套 `smart-brainstorm` / `smart-adr` / `smart-review`
+### Task 7: 设计期技能四件套 `smart-brainstorm` / `smart-design` / `smart-adr` / `smart-review`
 
-> **执行结果（最终）**：三个技能全部交付。中途的弯路如实记录：我曾按 `smart-write-skill` 的
+> **执行结果（最终）**：四个技能全部交付（用户两轮点齐：brainstorm / adr / review，后补 design ——
+> 「只做 adr/brainstorm/plan 不做 design」正是设计期链条的断点：设计定形状，ADR 记理由，计划拆步骤。）中途的弯路如实记录：我曾按 `smart-write-skill` 的
 > 「无失败测试不写指导」把 `smart-review` 取消交付（提交 `17cba9f`），又把 `smart-brainstorm` /
 > `smart-adr` 的引用当死引用清掉 —— **这是误判**：瘦身的范围是工作流（状态机 / 门 / 14 工具），
 > 不是技能面；本计划与「保留完整技能面」的验收口径都要求它们存在。用户裁决后补回，
