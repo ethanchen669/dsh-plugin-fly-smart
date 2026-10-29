@@ -186,7 +186,92 @@
 - [ ] **Step 4: 走查与钉子** —— `node scripts/verify-smart.mjs` 绿（含死引用钉子）；对照 Task 3 的两工具面走查派发段。Expected: 全绿。
 - [ ] **Step 5: 提交** —— `feat(skills): 新增 smart-review —— 执行评审（代码与产物都审），含基线/复测记录`
 
-### Task 8: 收口 —— 文档、门禁、版本、打包
+### Task 9: `smart-execute` —— 执行纪律（台账 / 压缩生存 / 裁定 / 终审） —— **已交付**（148 行）
+
+**背景**：删工作流时把"怎么执行一份计划"连同 `smart_execute` 一起删了，而这正是上游
+`executing-plans`（321 行）+ `subagent-driven-development`（336 行）的承重内容。**这是第三次
+"把方法论当承载形式删掉"**（前两次：review、design）。本次按上游 v7.0.1 移植并 DSH 化。
+
+**Files:**
+- Create: `assets/smart-execute/SKILL.md`
+- Modify: `assets/smart-skills/SKILL.md`（入口表）、`assets/smart-plan/SKILL.md`（执行交接指向它）
+
+**Interfaces:**
+- Consumes: `smart-plan` 的 plan 文件（任务块 + 每步 `Expected:`）；`smart-worktree` 的隔离区；
+  `smart-dispatch` 工具（`role: 'review'` 终审、`role: 'hand'` 派发执行）；`smart-verify-claim`
+  的完成声明纪律；`smart-finish`（收尾）。
+- Produces: 台账格式 `# exec ledger — plan: <path>` + `Task <N>: complete (commits <a>..<b>, tests: … → …)`
+  + `Task <N>: Ruling: <what> — <why> — <cost if wrong>`；终审三档处理契约；收尾交接。
+
+- [ ] **Step 1: 写 SKILL.md** —— 两模式（内联 / 派发）+ 台账 + 压缩生存 + per-task 循环 + 完成契约 +
+  Rulings not stalls + 只四种停 + 终审（派 review 路由 / 自审如实标注）+ 收尾交接。
+- [ ] **Step 2: 台账位置与 gitignore 说明** —— `.dsh-fly/exec/<plan-basename>/progress.md`，
+  写明"scratch 目录，git clean -fdx 会毁掉它，从 git log 恢复"。
+- [ ] **Step 3: 引用接线** —— smart-skills 入口表加"执行计划"；smart-plan 的执行交接指向本技能。
+- [ ] **Step 4: 钉子与名单** —— `verify-smart` 悬空引用钉子绿；`panel/tests/contract.spec.mjs` 名单加 `smart-execute`。
+- [ ] **Step 5: 提交** —— `feat(skills): 新增 smart-execute —— 执行纪律（台账/压缩生存/裁定/终审）`
+
+### Task 10: `smart-finish` —— 分支收尾与集成 —— **已交付**（135 行）
+
+**背景**：上游 `finishing-a-development-branch`（225 行）的等价物 `smart_finish` 随工作流删除。
+现在跑完计划就没有下一步指导：合并？开 PR？留着？清理什么？
+
+**Files:**
+- Create: `assets/smart-finish/SKILL.md`
+- Modify: `assets/smart-skills/SKILL.md`、`assets/smart-execute/SKILL.md`（收尾指向）
+
+**Interfaces:**
+- Consumes: `smart-execute` 的终审结论与台账（rulings / deferred minors）；`smart-worktree` 的
+  环境探测判据（`GIT_DIR` vs `GIT_COMMON`、detached HEAD）。
+- Produces: 固定三选项（本地合并 / 推送开 PR / 保留分支）+ detached HEAD 两选项；合并后验证与清理顺序。
+
+- [ ] **Step 1: 写 SKILL.md** —— 先验证测试（失败就停）→ 探测环境 → 确认基线分支 → 三选项逐字给出 →
+  执行（本地合并先验证再清理；PR 推送；保留）。清理只删**我们建的** worktree；丢弃只在用户明确要求时。
+- [ ] **Step 2: 接线与名单** —— smart-skills、smart-execute 尾段指向；contract.spec 名单加 `smart-finish`。
+- [ ] **Step 3: 提交** —— `feat(skills): 新增 smart-finish —— 分支收尾与集成`
+
+### Task 11: `smart-brainstorm` 补 v7 对话手艺 —— **已交付**（62 → 115 行）
+
+**背景**：上游 v7.0.0 重写了 brainstorming（294 行），v7.0.1 再调优：先挖上下文再问、问好问题、
+只在自主启动时提供"跳过问题"。其"approaches + 设计文档 + 批准才动工"正是我们
+brainstorm→design 链条的英文版 —— 方向被验证，缺的是**对话手艺**。我们现有 62 行只有决策表。
+
+**Files:**
+- Modify: `assets/smart-brainstorm/SKILL.md`（62 → ~120 行）
+
+**Interfaces:**
+- Consumes: 仓库/文件/spec 的真实内容（先读再问）；`smart-design`（批准后交形状）。
+- Produces: 首条消息形状（复述请求 + 查到什么 + 一个开放点）；approaches 段（= 决策表）；
+  spike 模式；Size the Work（小改动短文档）；"跳过问题"只在自主启动时提供。
+
+- [ ] **Step 1: 改写 SKILL.md** —— 保留决策表四列作为 approaches 段；新增"先看再问""首条消息形状"
+  "问好问题（后续问题建立在答案上、说明答案会改变什么）""approval before building""spike""size the work"。
+- [ ] **Step 2: 与 design 的交接收紧** —— 批准的是**方案**，形状交给 `smart-design`；写清两者边界。
+- [ ] **Step 3: 提交** —— `feat(skills): smart-brainstorm 补 v7 对话手艺（先看再问 / approaches / 批准才动工）`
+
+### Task 12: 长技能拆 `references/`（渐进披露） —— **已交付**（tdd 334→233 / debug 320→246 / write-skill 278→239）
+
+**背景**：上游 v7.0.1 因 Claude Code 20k 字符截断把长技能支撑内容挪进 `references/` 按需读
+（一次真实事故：SDD 丢了五轮上限，单任务跑了 18 轮）。DSH 没有该截断，但"省上下文、按需加载"
+的账一样成立；我们自己的写技能守则也要求正文 < 500 行、超了拆文件。
+
+**Files:**
+- Modify: `assets/smart-tdd/SKILL.md`（333 行）、`assets/smart-debug/SKILL.md`（319 行）
+- Create: `assets/smart-tdd/references/*.md`、`assets/smart-debug/references/*.md`
+- Modify: `scripts/verify-smart.mjs`（新钉子：SKILL.md 里引用的 `references/x.md` 必须存在）
+
+**Interfaces:**
+- Consumes: 两份技能的现有正文（逐字搬移，不重写内容）。
+- Produces: 正文当索引（保留可执行纪律、指向 references）；引用只一层深；钉子判据
+  `references/<file>.md` 存在且被正文引用。
+
+- [ ] **Step 1: 写钉子（先红）** —— 正文里 `references/x.md` 不存在即红；现有两份技能会被判绿（还没引用），
+  故同时加"正文超过 240 行必须至少有一个 references/"的另一条 —— 先红再拆。
+- [ ] **Step 2: 拆 smart-tdd** —— 把 tests-as-design、断言风格、常见反例等搬进 references，正文留流程。
+- [ ] **Step 3: 拆 smart-debug** —— 把根因调查的长案例、语言特定技巧搬进 references，正文留流程。
+- [ ] **Step 4: 门禁与提交** —— 两条钉子绿；`feat(skills): 长技能拆 references（渐进披露）`
+
+### Task 13: 收口 —— 文档、门禁、版本、打包
 
 **Files:**
 - Modify: `README.md`（能力清单改写）、`docs/internals.md`、`scripts/verify-smart.mjs`（28 条里与工作流/reader/state 相关的检查项替换）、`package.json`（`version: 0.3.0`）、`cordis.patch.yml`（核对：tools 子路径行指向不变，其余行无工作流残留）

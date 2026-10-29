@@ -256,6 +256,27 @@ check('peer 范围带显式预发布分支（|| 分支）', noBranch.length === 
   check('技能里没有指向不存在技能的引用', dangling.length === 0, dangling.slice(0, 6).join(' | '))
 }
 
+// ⑤d 长技能必须拆 references/（渐进披露）：正文超 240 行却一个 references/ 都没有 ⇒ 红；
+//   正文里引用的 references/x.md 必须存在（引用了不存在的文件，读的人会卡在空指针上）。
+{
+  const longSkills = []
+  const danglingRefs = []
+  for (const entry of readdirSync(join(ROOT, 'assets'), { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue
+    const file = join(ROOT, 'assets', entry.name, 'SKILL.md')
+    if (!existsSync(file)) continue
+    const text = readFileSync(file, 'utf8')
+    const lines = text.split('\n').length
+    const refs = [...text.matchAll(/`references\/([A-Za-z0-9._-]+\.md)`/gu)].map(match => match[1])
+    if (lines > 240 && refs.length === 0) longSkills.push(`assets/${entry.name} (${lines} 行)`)
+    for (const ref of new Set(refs)) {
+      if (!existsSync(join(ROOT, 'assets', entry.name, 'references', ref))) danglingRefs.push(`assets/${entry.name}/references/${ref}`)
+    }
+  }
+  check('长技能已拆 references/（正文 > 240 行必须有）', longSkills.length === 0, longSkills.join(' | '))
+  check('技能引用的 references 文件都存在', danglingRefs.length === 0, danglingRefs.join(' | '))
+}
+
 // ⑥ 必须文件存在（0.3.0：lib/state.mjs 与 panel/reader.js 随工作流删除，
 //   留下的是派发核心与文档契约这两个自包含模块）
 for (const rel of ['index.js', 'lib/dispatch.mjs', 'lib/doc-contract.mjs', 'README.md', 'LICENSE', '.gitignore']) {

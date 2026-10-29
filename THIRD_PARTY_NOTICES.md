@@ -12,6 +12,7 @@ briefing 对话回路、面板可视化、成对相位与 review bundle）。
 ## superpowers
 
 - **来源**: https://github.com/obra/superpowers
+- **对照基线**: v7.0.1（2026-10-21）—— brainstorming 重建与调优、长技能 references/ 化、executing-plans/SDD 台账纪律
 - **许可**: MIT License
 - **版权**: Copyright (c) 2025 Jesse Vincent
 
@@ -54,17 +55,24 @@ SOFTWARE.
 | `assets/smart-worktree/` | `skills/using-git-worktrees/` | 移植 |
 | `assets/smart-parallel/` | `skills/dispatching-parallel-agents/` | 移植 |
 | `assets/smart-write-skill/` | `skills/writing-skills/` | 移植（含 references 摘要） |
-| `assets/smart-diagnose/` | `skills/diagnosing-superpowers/` | **改写适配**（诊断对象换成 smart 工作流） |
+| `assets/smart-diagnose/` | `skills/diagnosing-superpowers/` | **改写适配**（诊断对象换成路由与派发） |
+| `assets/smart-brainstorm/` | `skills/brainstorming/`（v7.0.1） | 改写适配（决策表 + 先看再问 + 批准才动工） |
+| `assets/smart-execute/` | `skills/executing-plans/` + `skills/subagent-driven-development/` | 合并改写（两模式共用台账） |
+| `assets/smart-finish/` | `skills/finishing-a-development-branch/` | 移植 |
+| `assets/smart-review/` | `skills/requesting-code-review/` | 扩展（它只管派人，我们同时给评审纪律与三档终态） |
+| `assets/smart-acceptance/` | （上游无） | **本仓扩展**：fixture / gate / probe |
+| `assets/smart-design/` | （上游无） | **本仓扩展**：设计五问 |
+| `assets/smart-adr/` | （上游无） | **本仓扩展**：ADR-lite 五段含"错了代价" |
 
 **未移植但用 smart 现有机制替代**的 superpowers 技能（无版权文本随包分发，但方法论来源相同）：
 
 | superpowers | 本仓库的等价物 |
 | --- | --- |
-| `subagent-driven-development` | hand 派发 + review bundle（`smart_execute` / `smart_consult`） |
-| `executing-plans` | `smart_execute` |
-| `requesting-code-review` | `smart_consult` + `smart_verify` |
-| `finishing-a-development-branch` | `smart_finish` |
-| `brainstorming` | `brainstorm` 相位 + `smart_brief` 对话回路 |
+| `subagent-driven-development` | `smart-execute` 的派发模式 |
+| `executing-plans` | `smart-execute` 的内联模式 |
+| `requesting-code-review` | `smart-review` + `smart_dispatch({ role: 'review' })` |
+| `finishing-a-development-branch` | `smart-finish` |
+| `brainstorming` | `smart-brainstorm` |
 | `diagnosing-superpowers` | `smart-diagnose`（改写适配） |
 
 ### 命名

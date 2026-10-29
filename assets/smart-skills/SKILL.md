@@ -31,6 +31,8 @@ description: Use when starting any task in this profile — establishes how to f
 - **「建个东西」**（加功能、做组件、改行为）→ 先 `smart-brainstorm` 定方案，再 `smart-design` 定形状，取舍留档 `smart-adr`，最后写计划（`smart-plan`）
 - **「修个 bug」/ 行为不对** → 先 `smart-debug`，修完用 `smart-verify-claim` 收尾
 - **要写多步计划** → `smart-plan`
+- **要把计划跑完** → `smart-execute`（台账 + 裁定 + 终审）
+- **跑完了，怎么落地** → `smart-finish`（合并 / PR / 保留）
 - **写任何生产代码之前** → `smart-tdd`
 - **要定义「怎么算过」** → `smart-acceptance`（fixture / gate / probe，先于实现写）
 - **即将声称完成 / 测试通过** → `smart-verify-claim`
@@ -55,6 +57,8 @@ description: Use when starting any task in this profile — establishes how to f
 | 方案定了、要展开成实现形状 | `smart-design`（组件/接口/数据/错误五问） |
 | 设计取舍要长期留档 | `smart-adr`（ADR-lite 五段，写进 docs/adr/ 或计划的约束节） |
 | 多步实现、别人（或另一个模型）要照着干 | `smart-plan` → 写 `docs/plans/<日期>-<名字>.md` |
+| 计划写好了，开始跑 | `smart-execute`（台账落 `.dsh-fly/exec/`；压缩后信台账） |
+| 跑完了，要落地 | `smart-finish`（先验证，再给三个集成选项） |
 | 要交付、要人验收 | 先 `smart-acceptance` 写 `<同名>-acceptance.md`（fixture/gate/probe），收尾用 `smart-verify-claim` |
 | 会话/路由出了问题 | `smart-diagnose`（不写文件） |
 

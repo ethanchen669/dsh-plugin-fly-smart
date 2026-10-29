@@ -12,11 +12,11 @@
 - [ ] **A5 状态机与工作流测试全无残留** —— 检查：`ls lib/state.mjs tests/{workflow,briefings,execute,gates,state,command}.spec.mjs 2>&1` + `grep -rn "from '.*state\.mjs'" tools/ lib/ index.js panel/`；预期：文件全部 Not found、**没有任何 import**（说明性注释允许提及该模块已删除，那不是残留）。
 - [ ] **A6 面板只剩模型路由卡** —— 检查：`node --test panel/tests/contract.spec.mjs` 的反向断言（客户端源码里无 `/tasks`、`artifactTabs`、`reworkBudgetOf`、`data-probe="board"`；构建产物里无 `/fly/smart/tasks`）+ `data-fly-smart-field` 在场；预期：全 PASS、`lib/client.js` 已重建。**注**：`workbench-css.ts` 是设计系统的逐字节副本（`sync-panel-style.mjs --check` 在门禁里比对），其中的 `data-phase-status` 规则属于共享库，故反向断言打在客户端源码与产物上，不打在 CSS 上。
 - [ ] **A7 升级失败形状可读** —— 检查：README「已知限制」节存在且写明 0.2.x 会话调 `smart_begin` 等旧工具会得到 unknown tool；预期：文档逐字说明，无「工具仍可用」类误导。
-- [ ] **A8 技能零死引用** —— 检查：`node scripts/verify-smart.mjs`（assets 死引用钉子）+ 人工走查十五个技能的派发段；预期：钉子绿；每个技能指挥的工具名都存在于 Task 3 的两工具面（走查结论写进提交信息）。
+- [ ] **A8 技能零死引用** —— 检查：`node scripts/verify-smart.mjs`（assets 死引用钉子）+ 人工走查十七个技能的派发段；预期：钉子绿；每个技能指挥的工具名都存在于 Task 3 的两工具面（走查结论写进提交信息）。
 - [ ] **A9 存量数据零改动** —— 检查：`shasum ~/.dsh-fly/smart-routes.json` 与开工前记录比对 + `git -C ~/ai-workspace/dsh-fly status docs/smart`；预期：镜像哈希不变（除非用户在面板上保存过路由）、docs/smart 无 diff。
 - [ ] **A10 打包完整性** —— 检查：`npm pack` 后 tar 清单核对；预期：含 `lib/dispatch.mjs`、`lib/doc-contract.mjs`、`assets/**/SKILL.md`（与仓库逐字节一致），不含 `panel/reader.js`、不含 `lib/state.mjs`。
 - [ ] **A11 全量门禁** —— 检查：`node --test tests/*.spec.mjs && node --test panel/tests/*.spec.mjs && node scripts/verify-smart.mjs`；预期：全绿，退出码 0。
-- [ ] **A12 设计期能力不缩水（用户裁决，2026-10-29）** —— 检查：`ls assets/{smart-brainstorm,smart-design,smart-adr,smart-plan,smart-acceptance,smart-review}/SKILL.md` + 两条钉子（已删工具死引用 / 悬空技能引用）+ `panel/tests/contract.spec.mjs` 的技能名单（15 个）；预期：六个技能都在、内容各自承载工作流退役前的阶段契约（决策表 / 设计五问 / ADR-lite 五段 / 计划契约 / 验收件 fixture-gate-probe / 三档评审）、钉子绿、名单齐。**注**：瘦身的范围是**工作流**（状态机 / 门 / 14 工具），不是技能面；此前把 `smart-review` 按"RED 未复现失败"取消交付属于误判——计划里写明要交付它，我按测试纪律单方面砍掉，与"保留完整技能面"的验收口径冲突。
+- [ ] **A12 设计期能力不缩水（用户裁决，2026-10-29）** —— 检查：`ls assets/{smart-brainstorm,smart-design,smart-adr,smart-plan,smart-acceptance,smart-review}/SKILL.md` + 两条钉子（已删工具死引用 / 悬空技能引用）+ `panel/tests/contract.spec.mjs` 的技能名单（17 个）；预期：六个技能都在、内容各自承载工作流退役前的阶段契约（决策表 / 设计五问 / ADR-lite 五段 / 计划契约 / 验收件 fixture-gate-probe / 三档评审）、钉子绿、名单齐。**注**：瘦身的范围是**工作流**（状态机 / 门 / 14 工具），不是技能面；此前把 `smart-review` 按"RED 未复现失败"取消交付属于误判——计划里写明要交付它，我按测试纪律单方面砍掉，与"保留完整技能面"的验收口径冲突。
 
 ## 覆盖说明
 
@@ -40,3 +40,7 @@
 | A12 | ✅ 六个技能已交付：`smart-brainstorm`（决策表）、`smart-design`（五问定形状）、`smart-adr`（ADR-lite 五段）、`smart-plan`（步骤契约）、`smart-acceptance`（fixture/gate/probe 验收件）、`smart-review`（三档评审 + 反橡皮图章「已核对」节）；技能名单 15 个、两条钉子绿 |
 | A13（补） | ✅ `lite` 路由全链路：镜像三层 / `resolveRoute(role:'lite')` / `smart_dispatch` / 面板输入框 / 行配置 `liteRoute`；**不回落**（缺了大声报错），7 条新测试钉住 |
 | A14（补） | ✅ `smart_check_doc` 契约扩到四种：plan / acceptance / design（五问 + 拒步骤）/ adr（五段 + 必答"错了代价"） |
+| A15（补） | ✅ `smart-execute`：两模式共用台账（`.dsh-fly/exec/<plan>/progress.md`）、压缩后信台账与 `git log`、Rulings not stalls（含错了代价）、只四种停、终审一次（review 路由 / 自审如实标注）、Critical·Important 一次修复轮、Minor 进台账与最终消息 |
+| A16（补） | ✅ `smart-finish`：先验证再给选项、三选项（detached HEAD 两选项）、合并后重跑测试、清理按来源（外部托管不动）、丢弃只由用户明确要求 |
+| A17（补） | ✅ `smart-brainstorm` 升到 v7 对话手艺：先看再问、首条消息形状（复述 + 查到什么 + 一个开放点）、approaches 段 = 决策表、批准才动工、spike 与 Size the Work |
+| A18（补） | ✅ 渐进披露：`smart-tdd` 334→233、`smart-debug` 320→246、`smart-write-skill` 278→239，支撑内容进 `references/`；两条新钉子（正文 > 240 行必须有 references/、引用的 references 必须存在） |

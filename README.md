@@ -1,6 +1,6 @@
 # @dsh-fly/dsh-plugin-fly-smart
 
-**模型路由 + 15 个技能** —— DeepSeek Harness 插件。
+**模型路由 + 17 个技能** —— DeepSeek Harness 插件。
 
 方法论移植自 [obra/superpowers](https://github.com/obra/superpowers)（MIT）。
 插件的活是两件事：让**子代理跑在你指定的模型上**，以及让**工作纪律在需要时才出现**。
@@ -25,7 +25,7 @@
 
 ---
 
-## 15 个技能：不用开任务也能用
+## 17 个技能：不用开任务也能用
 
 技能按你说话的场景自动命中。**多数日常事到这里就够了。**
 
@@ -41,6 +41,8 @@
 | 「我改完了，能提交吗」 | `smart-verify-claim` —— 证据先于断言 + 发现对账 |
 | 「评审说这里要改」 | `smart-review-receive` —— 先核实再改，不许表演式同意 |
 | 「这是 spec，写个计划」 | `smart-plan` —— 给没见过代码库的工程师写，落 `docs/plans/` |
+| 「按这个计划做」 | `smart-execute` —— 台账 + 裁定 + 终审；压缩后信台账与 git log |
+| 「做完了，怎么落地」 | `smart-finish` —— 先验证，再给合并 / PR / 保留三个选项 |
 | 「开个分支做这个」 | `smart-worktree` —— 先隔离，绝不在 main 上开工 |
 | 「这 3 个测试都挂了」 | `smart-parallel` —— 各派一个并行查 |
 | 「我要写个技能」 | `smart-write-skill` —— 写技能就是把 TDD 用在文档上 |

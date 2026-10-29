@@ -191,8 +191,8 @@ test('the host row claims the /fly/smart namespace and publishes its service', a
   assert.equal(skillProviders.length, 1)
   assert.equal(skillProviders[0].name, 'fly-smart')
   const skills = await skillProviders[0].list()
-  // 一个不能少：新增技能要同步补进这份名单（0.3.0 补齐设计期能力：brainstorm / design / adr / plan / acceptance / review）。
-  const expected = ['smart-acceptance', 'smart-adr', 'smart-brainstorm', 'smart-debug', 'smart-design', 'smart-diagnose', 'smart-parallel', 'smart-plan', 'smart-review', 'smart-review-receive', 'smart-skills', 'smart-tdd', 'smart-verify-claim', 'smart-worktree', 'smart-write-skill']
+  // 一个不能少：新增技能要同步补进这份名单（0.3.0 补齐方法论链条：brainstorm / design / adr / plan / acceptance / execute / finish / review）。
+  const expected = ['smart-acceptance', 'smart-adr', 'smart-brainstorm', 'smart-debug', 'smart-design', 'smart-diagnose', 'smart-execute', 'smart-finish', 'smart-parallel', 'smart-plan', 'smart-review', 'smart-review-receive', 'smart-skills', 'smart-tdd', 'smart-verify-claim', 'smart-worktree', 'smart-write-skill']
   assert.deepEqual(skills.map(entry => entry.name).sort(), expected)
   for (const entry of skills) {
     assert.equal(typeof entry.description, 'string')
