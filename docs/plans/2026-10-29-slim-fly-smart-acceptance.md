@@ -37,4 +37,4 @@
 | A9 | `~/.dsh-fly/smart-routes.json` mtime 仍为 10-20；`~/.dsh-fly/smart/` 未动；`dsh-fly/docs/smart` 无本次改动 |
 | A10 | `npm pack` 后逐项核对：含 dispatch/doc-contract/tools/panel routes、不含 reader/state/tests；10 个 SKILL.md 与仓库**逐字节一致** |
 | A11 | 61 个测试全绿 + `verify-smart` **32/32** |
-| A12 | 未交付（RED 未复现失败），证据见 `.tmp/review-lab/scorecard.md` 与提交 `17cba9f` |
+| A12 | 未交付（RED 未复现失败）：干净夹具的无技能基线抓全 3 个 P0 + 10 条，并指出"计划里唯一那条验收测试实测通过、恰好绕过全部 P0"；证据见 `.tmp/review-lab/scorecard.md` 与提交 `17cba9f` |
