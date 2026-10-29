@@ -239,6 +239,23 @@ check('peer 范围带显式预发布分支（|| 分支）', noBranch.length === 
   check('技能里没有已删工作流工具的引用', offenders.length === 0, offenders.slice(0, 8).join(' | '))
 }
 
+// ⑤c 技能不许引用不存在的技能（0.3.0 踩过）：写成 `smart-xxx` 但 assets/ 里没有这个目录，
+//    失败形状是"技能让模型去查一个查不到的技能"，而门禁全绿。
+{
+  const available = new Set(readdirSync(join(ROOT, 'assets'), { withFileTypes: true }).filter(entry => entry.isDirectory()).map(entry => entry.name))
+  const dangling = []
+  for (const name of available) {
+    const file = join(ROOT, 'assets', name, 'SKILL.md')
+    if (!existsSync(file)) continue
+    readFileSync(file, 'utf8').split('\n').forEach((line, index) => {
+      for (const match of line.matchAll(/`(smart-[a-z][a-z-]*)`/gu)) {
+        if (!available.has(match[1])) dangling.push(`assets/${name}/SKILL.md:${index + 1}: ${match[1]}`)
+      }
+    })
+  }
+  check('技能里没有指向不存在技能的引用', dangling.length === 0, dangling.slice(0, 6).join(' | '))
+}
+
 // ⑥ 必须文件存在（0.3.0：lib/state.mjs 与 panel/reader.js 随工作流删除，
 //   留下的是派发核心与文档契约这两个自包含模块）
 for (const rel of ['index.js', 'lib/dispatch.mjs', 'lib/doc-contract.mjs', 'README.md', 'LICENSE', '.gitignore']) {
