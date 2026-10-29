@@ -1,6 +1,6 @@
 ---
 name: smart-diagnose
-description: 当模型路由或子代理派发出问题时加载：面板里改了模型却没生效、派发用错了模型、review 悄悄回落到 hand（自己审自己）、smart_dispatch 报 no hand/review model is configured、派发报 ended as error / returned nothing / subagent service unavailable、smart_check_doc 报一堆契约缺口 —— 先取证再下结论，症状→假设→验证，每条结论带出处。
+description: 当模型路由或子代理派发出问题时加载：面板里改了模型却没生效、派发用错了模型、review 悄悄回落到 hand（自己审自己）、smart_dispatch 报 no hand/review/lite model is configured、派发报 ended as error / returned nothing / subagent service unavailable、smart_check_doc 报一堆契约缺口 —— 先取证再下结论，症状→假设→验证，每条结论带出处。
 ---
 
 <!-- Adapted from obra/superpowers skills/diagnosing-superpowers/ — MIT License, Copyright (c) 2025 Jesse Vincent. Reworked (0.3.0) to diagnose the route/dispatch surface. -->
@@ -27,10 +27,11 @@ description: 当模型路由或子代理派发出问题时加载：面板里改�
   0.2.x 的 14 个工作流工具、那条斜杠命令、阶段机与用户门**已经删除** ——
   会话里调它们会得到 unknown tool，那不是 bug。
 - **路由三层 + 一个硬底**（`lib/dispatch.mjs` 的 `resolveRoute`）：
-  `preset`（行配置 `handRoute` / `reviewRoute`，**压过面板**）→ `session`（镜像 `sessions[<id>]`）
+  `preset`（行配置 `handRoute` / `reviewRoute` / `liteRoute`，**压过面板**）→ `session`（镜像 `sessions[<id>]`）
   → `default`（镜像 `default`，含顶层 legacy `hand` 回落）。没有镜像也没有行配置 ⇒ 调用时**大声报错**。
 - **每次调用现读**：面板保存后下一次派发生效，不需要重启、不需要重新挂载。
   反过来，**一次调用用的路由不会变**：回执里 `route` 就是那一次实际用的。
+- **lite 不回落**：`role: 'lite'` 没配就是 `no lite model is configured`（成本决定不替用户做）；`review` 才有回落。
 - **review 会回落**：没有显式 review 路由时，review 复用 hand，回执 `source` 是
   `<session|default>-fallback`。**看到 `-fallback` 就等于"执行者在审自己"** —— 要告诉用户，不要当正常。
 - **派发契约双版本**：0.2.x 宿主 `startActivation(...)` → `{ childId, result(), dispose() }`；

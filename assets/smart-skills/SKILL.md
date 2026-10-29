@@ -87,9 +87,9 @@ description: Use when starting any task in this profile — establishes how to f
 
 **技能派出去的子代理**按 route 选：
 
-- 机械活（探索 / 取证 / 并行调查）→ `lite` 路由
+- 机械活（探索 / 取证 / 并行调查）→ `lite` 路由（`smart_dispatch({ role: 'lite' })`；不回落，没配就报错）
 - 多步推理、跨多文件理解 → `hand` 路由
-- **评审永远走 `review` 路由**，不用 `lite`
+- **评审永远走 `review` 路由**（`role: 'review'`），不用 `lite`
 
 记住 *"turn count beats token price"*：便宜模型在多步工作上常花 2–3 倍轮次，
 总成本反而更高。纯机械、一步到位的才用 `lite`。

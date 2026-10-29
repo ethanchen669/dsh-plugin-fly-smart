@@ -38,7 +38,7 @@ const KIND = 'fly.smart'
 const TAB_TITLE = 'Smart 模型路由'
 
 /** One line under the guide capsule, shown while the guide stays uncrowded. */
-const TAB_DESCRIPTION = 'hand / review 路由：派发子代理时按这里选模型'
+const TAB_DESCRIPTION = 'hand / review / lite 路由：派发子代理时按这里选模型'
 
 /** Ascending place among every registered type's guide entries: after the four workbenches. */
 const GUIDE_ORDER = 40
