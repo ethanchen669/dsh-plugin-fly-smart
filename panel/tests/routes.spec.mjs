@@ -40,14 +40,11 @@ const routes = await import(pathToFileURL(join(packageRoot, 'routes.mjs')).href)
 // smart 抽成独立仓之后，它的 lib/ 不再住在 `packages/` 下 —— 走锁感知的解析
 // （`packageDir`：本仓 packages/ 优先，其次按 plugins.lock.json 到 $FLY_PLUGINS_DIR 找）。
 // 同仓了：面板与工具在**同一个包**里，直接相对解析（不再需要插件锁那套跨仓解析）。
-const agentState = await import(pathToFileURL(join(packageRoot, '..', 'lib', 'state.mjs')).href)
-const { readIndex, readTask } = await import(pathToFileURL(join(packageRoot, 'reader.js')).href)
+const agentDispatch = await import(pathToFileURL(join(packageRoot, '..', 'lib', 'dispatch.mjs')).href)
 const {
   MIRROR_VERSION,
   answerSmartRequest,
-  locateTask,
   readRoutesConfig,
-  resolveRoots,
   writeRoutesConfig,
 } = host
 
@@ -89,17 +86,12 @@ function fakeRequest({ method = 'GET', url = '/fly/smart', headers = {}, body = 
 }
 
 /**
- * The handler's capabilities as `apply()` composes them.
+ * The handler's capabilities as `apply()` composes them (0.3.0: routes only).
  *
- * @param input - `{ root, env, sessionCwd, mirrorPath, rowHand, write, log }`.
+ * @param input - `{ mirrorPath, rowHand, rowReview, write, log }`.
  */
-function makeDeps({ root = null, env = {}, sessionCwd = undefined, mirrorPath = SCRATCH_MIRROR, rowHand = '', rowReview = '', write = true, log = () => undefined } = {}) {
-  const sessions = sessionCwd === undefined ? undefined : {
-    get: id => (sessionCwd[id] === undefined ? undefined : { header: { cwd: sessionCwd[id] } }),
-  }
-  const rootsOf = sid => resolveRoots({ rawConfig: root === null ? {} : { rootDir: root }, env, sessionId: sid, sessions })
+function makeDeps({ mirrorPath = SCRATCH_MIRROR, rowHand = '', rowReview = '', write = true, log = () => undefined } = {}) {
   return {
-    roots: rootsOf,
     readRoutes: sid => readRoutesConfig({ mirrorPath, rowHand, rowReview, sessionId: sid }),
     // 逐字段对齐 `apply()` 的真接线（role/value 都要过）：桩少传一个参数，测的就是另一份契约 ——
     // review 写入正是这样漏过了一整轮测试（面板发 role=review，桩把它丢掉，于是全绿）。
@@ -109,9 +101,6 @@ function makeDeps({ root = null, env = {}, sessionCwd = undefined, mirrorPath = 
             writeRoutesConfig({ mirrorPath, rowHand, rowReview, role, value, hand, scope, sessionId: sid }),
         }
       : {},
-    locate: (id, sid) => locateTask(id, rootsOf(sid).candidates),
-    readIndex,
-    readTask,
     log,
   }
 }
@@ -128,39 +117,36 @@ async function call(deps, url, { method = 'GET', body = null, headers = {} } = {
   return { status: res.status, headers: res.headers, body: res.body, json }
 }
 
-/** A workspace root with one task, so `/tasks` has something to filter. */
-function plantWorkspace(root, id = FIXTURE_ID) {
-  mkdirSync(join(root, 'tasks', id), { recursive: true })
-  writeFileSync(join(root, 'tasks', id, 'state.json'), `${JSON.stringify({ id, title: 'ws task', phase: 'design' })}\n`, 'utf8')
-  return root
-}
-
 const sha = file => createHash('sha256').update(readFileSync(file)).digest('hex')
 
 // ── the status order ────────────────────────────────────────────────────────
 
-test('an unknown endpoint is 404 before any method or body judgement', async t => {
-  const deps = makeDeps({ root: scratch(t) })
+test('an unknown endpoint is 404 before any method or body judgement', async () => {
+  const deps = makeDeps({})
   const res = await call(deps, '/fly/smart/nope', { method: 'POST', body: 'not json' })
   assert.equal(res.status, 404)
   assert.match(res.json.error, /unknown smart endpoint/u)
-  assert.equal(res.json.endpoints.length, 3)
+  assert.equal(res.json.endpoints.length, 1, '0.3.0 answers exactly one endpoint')
 })
 
-test('wrong methods are 405 with a derived allow list, one route table, no duplication', async t => {
-  const deps = makeDeps({ root: scratch(t) })
-  const tasks = await call(deps, '/fly/smart/tasks', { method: 'POST' })
-  assert.equal(tasks.status, 405)
-  assert.equal(tasks.headers.allow, 'GET, HEAD')
-
+test('wrong methods are 405 with a derived allow list, one route table, no duplication', async () => {
+  const deps = makeDeps({})
   const deleteRoutes = await call(deps, '/fly/smart/routes', { method: 'DELETE' })
   assert.equal(deleteRoutes.status, 405)
   // POST 分支被删掉时这里会变成 'GET, HEAD' —— 那正是 A/B#1 的红。
   assert.equal(deleteRoutes.headers.allow, 'GET, HEAD, POST')
 
-  const put = await call(deps, '/fly/smart/task?id=x', { method: 'PUT' })
+  const put = await call(deps, '/fly/smart/routes', { method: 'PUT' })
   assert.equal(put.status, 405)
-  assert.equal(put.headers.allow, 'GET, HEAD')
+  assert.equal(put.headers.allow, 'GET, HEAD, POST')
+
+  const postRoot = await call(deps, '/fly/smart', { method: 'POST' })
+  assert.equal(postRoot.status, 405)
+  assert.equal(postRoot.headers.allow, 'GET, HEAD')
+
+  // 已删的任务端点现在按"未知端点"处理，而不是 405 —— 路由表只有一份。
+  const gone = await call(deps, '/fly/smart/tasks', { method: 'GET' })
+  assert.equal(gone.status, 404)
 })
 
 test('a cross-site write is 403, kept apart from the 415 content-type refusal', async t => {
@@ -484,81 +470,21 @@ test('reconcile-on-read folds a non-empty row ref into the default layer, and an
 
 test('the root payload carries the same routeConfig as GET /routes (one request for first paint)', async t => {
   const mirrorPath = scratchMirror(t)
-  const root = plantWorkspace(scratch(t))
-  const deps = makeDeps({ root, mirrorPath, sessionCwd: { 'session-1': scratch(t) } })
+  const deps = makeDeps({ mirrorPath })
   const boot = await call(deps, '/fly/smart?sessionId=session-1')
   const direct = await call(deps, '/fly/smart/routes?sessionId=session-1')
   assert.deepEqual(boot.json.routeConfig, direct.json)
-  assert.deepEqual(boot.json.endpoints.map(entry => entry.path), ['/fly/smart/tasks', '/fly/smart/task?id=<id>', '/fly/smart/routes'])
-  assert.equal(boot.json.exists, true)
-})
-
-test('a missing root is 503; an existing root with an unknown workspace is a 200 with the host sentence', async t => {
-  const missing = join(scratch(t), 'not-created-yet')
-  const missingDeps = makeDeps({ root: missing, env: { DSH_FLY_SMART_ROOT: missing } })
-  const tasks = await call(missingDeps, '/fly/smart/tasks')
-  assert.equal(tasks.status, 503, 'no capability must not look like no data')
-  assert.match(tasks.json.error, /smart 任务目录不存在/u)
-  assert.ok(tasks.json.error.includes(missing))
-
-  // 根存在（legacy 有任务）+ 工作区未知 → 200 + unknownWorkspace，空列表但带 legacy 计数。
-  const legacy = join(process.env.HOME, '.dsh-fly', 'smart')
-  plantWorkspace(legacy, '20260101-000000-legacy-task')
-  const unknown = makeDeps({ root: null })
-  const res = await call(unknown, '/fly/smart/tasks')
-  assert.equal(res.status, 200, res.body)
-  assert.equal(res.json.unknownWorkspace, true)
-  assert.deepEqual(res.json.tasks, [])
-  assert.equal(res.json.legacyCount, 1)
-  assert.match(res.json.message, /无法确定当前工作区/u)
-})
-
-test('a known workspace filters to that workspace and still counts the legacy root', async t => {
-  const workspace = scratch(t)
-  const legacy = join(process.env.HOME, '.dsh-fly', 'smart')
-  plantWorkspace(join(workspace, '.dsh-fly', 'smart'), '20260101-000000-ws-task')
-  plantWorkspace(legacy, '20260101-000000-legacy-task')
-  const deps = makeDeps({ root: null, sessionCwd: { 'session-ws': workspace } })
-  const res = await call(deps, '/fly/smart/tasks?sessionId=session-ws')
-  assert.equal(res.status, 200, res.body)
-  assert.equal(res.json.root, join(workspace, '.dsh-fly', 'smart'))
-  assert.equal(res.json.legacyCount, 1)
-  assert.deepEqual(res.json.tasks.map(row => row.id).sort(), ['20260101-000000-legacy-task', '20260101-000000-ws-task'], 'legacy tasks stay readable')
-
-  // 同 taskId 双根：工作区根胜出，并且响应里留下 note。
-  plantWorkspace(join(workspace, '.dsh-fly', 'smart'), '20260101-000000-legacy-task')
-  const both = await call(deps, '/fly/smart/tasks?sessionId=session-ws')
-  assert.match(both.json.note, /双根/u)
-  const detail = await call(deps, `/fly/smart/task?id=20260101-000000-legacy-task&sessionId=session-ws`)
-  assert.equal(detail.json.root, join(workspace, '.dsh-fly', 'smart'))
+  assert.deepEqual(boot.json.endpoints.map(entry => entry.path), ['/fly/smart/routes'])
 })
 
 test('the session id table agrees with the agent half, character for character', () => {
   const rejected = ['', '..', 'a/b', 'a\\b', `x${String.fromCharCode(0)}y`, 'x'.repeat(201), null, 7, undefined]
   const accepted = ['session-3f2a1c88-1f1e-4a1f-9f4d-2a4a1c881f1e', '3f2a1c88-1f1e-4a1f-9f4d-2a4a1c881f1e', 'session-7', 'my-custom-id', 'x'.repeat(200)]
   for (const value of [...rejected, ...accepted]) {
-    assert.equal(routes.isValidSessionId(value), agentState.isUsableSessionId(value), `panel/agent disagree on ${JSON.stringify(value)}`)
+    assert.equal(routes.isValidSessionId(value), agentDispatch.isUsableSessionId(value), `panel/agent disagree on ${JSON.stringify(value)}`)
   }
   for (const value of rejected) assert.equal(routes.isValidSessionId(value), false)
   for (const value of accepted) assert.equal(routes.isValidSessionId(value), true)
-})
-
-test('the write primitive refuses to be redirected by a task dir, and `/task` validates state.rootDir', async t => {
-  const workspace = scratch(t)
-  const root = plantWorkspace(join(workspace, '.dsh-fly', 'smart'), FIXTURE_ID)
-  // state.rootDir 记录另一个根 —— 它只是校验值，读的还是磁盘上找到的那份。
-  const stateFile = join(root, 'tasks', FIXTURE_ID, 'state.json')
-  const state = JSON.parse(readFileSync(stateFile, 'utf8'))
-  state.rootDir = join(scratch(t), 'somewhere-else')
-  writeFileSync(stateFile, `${JSON.stringify(state, null, 2)}\n`)
-  const logged = []
-  const deps = makeDeps({ root: null, sessionCwd: { 'session-x': workspace }, log: () => ({ warn: message => logged.push(message) }) })
-  const res = await call(deps, `/fly/smart/task?id=${FIXTURE_ID}&sessionId=session-x`)
-  assert.equal(res.status, 200)
-  assert.equal(res.json.root, root, 'the disk decides the read root, never the recorded value')
-  assert.equal(res.json.rootDirMismatch.actual, root)
-  assert.equal(logged.length, 1, 'an inconsistency is loud')
-  assert.match(logged[0], /state\.rootDir/u)
 })
 
 test('the developer’s real mirror is never read-modified by this suite', () => {

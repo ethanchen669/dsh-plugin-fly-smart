@@ -226,52 +226,13 @@ agent 选错了？问它："你读了技能还是选了 C。这个技能该怎�
 - [ ] 流程图只在决策不显然时用；有速查表；有常见错误节；无叙事
 - [ ] 配套文件只为工具或重型参考
 
-## 写技能的通用做法（官方最佳实践摘要）
+## 写技能的通用做法与流程图（参考）
 
-> 摘要自源技能的 references/anthropic-best-practices.md，内容进正文，不落独立文件。
-
-- **简洁为王**：上下文窗口是公共品。默认假设 agent 已经很聪明，只加它没有的信息；每一段都过"这段值它的 token 吗"。
-- **自由度匹配脆弱性**：多种路都对 → 文字指导（高自由）；有偏好模式 → 伪代码/带参脚本（中）；脆弱、必须按固定顺序 → 钉死的脚本（低）。"窄桥两侧是悬崖"给护栏，"旷野无险"给方向。
-- **不同档位的模型各测一遍**：快而省的档位看指导够不够、均衡档位看是否清晰高效、最强档位看是否过度解释。给最强模型刚好的量，弱一点的档位会不够用。
-- **渐进披露**：SKILL.md 当目录；正文 < 500 行，超了拆文件；引用一层深；长参考文件加目录。
-- **复杂流程给可勾选清单**，别让 agent 跳过关键校验步；**反馈环**（跑校验 → 修错 → 重来）显著提升质量。
-- **先建评测再写文档**：没有技能跑代表性任务找差距 → 建 3 个评测场景 → 量基线 → 写最小指令 → 迭代。这就是本文的 RED。
-- **用 agent 迭代技能**：Agent A（帮你写/改技能）↔ Agent B（带技能干真活），把 B 的真实表现带回 A 改。观察 agent 怎么**导航**你的技能：意外的读取顺序 = 结构不直觉；从不读某文件 = 该删或该加强信号。
-- **可执行脚本**：solve, don't punt —— 处理错误并给替代，别把异常原样抛给 agent；别留魔法常数（每个值写清理由）；写清是"执行"还是"当参考读"；别假设依赖已装（写出安装命令）。
-- **反模式**：Windows 反斜杠路径；一次给 5 个库（给默认 + 逃生口）；时效性信息（写进 old patterns 折叠区）；同一个概念换着叫。
-
-## Flowcharts（流程图）
-
-流程图**只**用于：不显然的决策点 / 可能提前停下的循环 / "A 还是 B"的取舍。
-**绝不**用于：参考资料（用表格）/ 代码示例（用 markdown 块）/ 线性步骤（用编号列表）/ 无语义标签。
-
-给用户渲图（抽出 SKILL.md 里语言标记为 `dot` 的围栏块，交给 graphviz 渲成 SVG；需要 graphviz）：
-
-```bash
-node scripts/render-graphs.js <技能目录>            # 每张图单独渲
-node scripts/render-graphs.js <技能目录> --combine  # 全部合成一张
-```
-
-精简实现（源技能 render-graphs.js 的核心，可直接落成脚本；`--combine` 等完整版在同一脚本里）：
-
-```js
-// 从 SKILL.md 抽出 dot 围栏块，逐块交给 graphviz 渲成 SVG
-import fs from 'node:fs';
-import path from 'node:path';
-import { execFileSync } from 'node:child_process';
-const dir = path.resolve(process.argv[2]);
-const md = fs.readFileSync(path.join(dir, 'SKILL.md'), 'utf-8');
-const blocks = [...md.matchAll(/`{3}dot\n([\s\S]*?)`{3}/g)].map(m => m[1].trim());
-if (!blocks.length) { console.log('no dot blocks'); process.exit(0); }
-fs.mkdirSync(path.join(dir, 'diagrams'), { recursive: true });
-for (const [i, dot] of blocks.entries()) {
-  const name = (dot.match(/digraph\s+(\w+)/) || [, `graph_${i + 1}`])[1];
-  const svg = execFileSync('dot', ['-Tsvg'], { input: dot, maxBuffer: 10 * 1024 * 1024 });
-  fs.writeFileSync(path.join(dir, 'diagrams', `${name}.svg`), svg);
-  console.log(`rendered ${name}.svg`);
-}
-```
+- 官方最佳实践摘要（简洁为王、自由度匹配脆弱性、渐进披露、复杂流程给清单、用 agent 迭代技能）：
+  `references/skill-authoring-practice.md`
+- 流程图只在不显然的决策点 / 可能提前停下的循环 / A or B 取舍时用；渲图脚本与 `dot` 约定见
+  `references/flowcharts.md`
 
 ## 与 smart 工作流的关系
 
-写技能本身不需要开 smart 任务。若你要交付一个带测试、要人验收的技能包，那才用 `smart_begin({ size: 'light' })`。
+写技能本身不需要写计划。若你要交付一个带测试、要人验收的技能包，才写 `docs/plans/` 下的计划与验收文件。

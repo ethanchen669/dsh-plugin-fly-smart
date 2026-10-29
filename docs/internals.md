@@ -6,177 +6,82 @@
 
 ## 1. 两个平面（同一包里）
 
-| 平面 | 入口 | `inject` | 挂载方式 |
-| --- | --- | --- | --- |
-| **宿主**（面板 + 自带技能） | `index.js` | `['webServer', 'skills']` | `cordis.patch.yml` 登记**裸包名**那一行 |
-| **agent**（阶段机 + 工具） | `tools/index.js` | `['tools', 'commands', 'systemPrompt']` | preset 行 `name: @dsh-fly/dsh-plugin-fly-smart/tools/index.js`，按会话 |
+| 平面 | 入口 | 职责 |
+| --- | --- | --- |
+| 宿主 | `index.js` | 认领 `/fly/smart` 前缀、只服务 `/routes`（GET/POST）+ 命名空间探测、注册内置技能 |
+| 智能体 | `tools/index.js` | 注册 `smart_dispatch` 与 `smart_check_doc` 两个工具 |
 
-`dsh.bundle.patch` 指向 `cordis.patch.yml`，里面**只有裸名那一行**：
+两个平面**只通过一个文件说话**：`~/.dsh-fly/smart-routes.json`（`DSH_FLY_SMART_ROUTES` 可覆盖）。
+面板写它，工具读它。镜像之外没有共享状态。
 
-- 带 `/` 的行名 ⇒ 客户端半边登记得不上（面板不出现在浏览器）
-- 带 `tools/` 的行 ⇒ 宿主开机激活工具插件
+## 2. 工具面（2 个）
 
-两条都有 `scripts/verify-smart.mjs` 的断言钉着。
+| 工具 | 做什么 | 关键约束 |
+| --- | --- | --- |
+| `smart_dispatch({ role, prompt, label? })` | 在配置的路由上跑一个子代理 | `role` 只有 `hand` / `review`（配置面能表达的那两个）；每次调用现读路由；回执带 `route` + `source` |
+| `smart_check_doc({ path, kind? })` | 校验计划 / 验收文档契约 | 路径必须绝对（宿主 cwd 是 `/`）；`kind` 按 `-acceptance.md` 后缀推断 |
 
-**状态机只有一份**（`lib/state.mjs`），宿主平面不复制它 —— 两份会给出两个"任务在哪一阶段"。
-`panel/reader.js` 里唯一与 `lib/state.mjs` 同源的是 `phasesFor`（判据相同，两边都有测试钉）。
+**子代理会话不能调用它们**：宿主 0.2.x 的 `startActivation` 请求里已经没有 `toolFilter`，
+所以"子代理不许再派子代理"这层约束必须由插件自己守（读 `header.origin` / `delegationDepth`）。
 
----
+## 3. 路由解析（`lib/dispatch.mjs`）
 
-## 2. 工具面（13 个）
+三层 + 一个硬底，**每次调用现读**（面板保存后下一次派发生效，不需要重挂载）：
 
-`smart_begin` · `smart_artifact` · `smart_consult` · `smart_decide` · `smart_ruling` ·
-`smart_brief` · `smart_brief_confirm` · `smart_gate` · `smart_execute` · `smart_verify` ·
-`smart_rework` · `smart_finish` · `smart_status`
-
-**子会话不许驱动工作流**：判据是 `session.header.origin === 'subagent'` 或
-`delegationDepth > 0`，任何 `smart_*` 一律拒（0.2.x 起宿主不再下发 per-child `toolFilter`，
-这层由插件自守）。
-
-`smart_status` 暴露：`metrics`（`METRIC_KEYS` 10 项）、`rulings`、`phases`、
-`shape` / `size`、`reviewPackage`、`workflow`、`spawns`（派生估算）—— **只读**，
-不参与闸门判定。
-
----
-
-## 3. 阶段机与 shape
-
-`PHASES = ['brainstorm','design','plan','acceptance','executing','reviewing','done','cancelled']`；
-`GATE_AFTER`：G1–G5 对应 brainstorm / design / plan / acceptance / reviewing。
-
-**每个任务走自己的相位序列**（`phasesFor(state)`）：
-
-```js
-SHAPES = {
-  feature:       ['brainstorm','design','plan','acceptance','executing','reviewing'],
-  fix:           ['brainstorm','plan','executing','reviewing'],
-  review:        ['reviewing'],
-  investigation: ['brainstorm'],
-}
-// 再按 workflow === 'optimized' 去掉 acceptance（那一相位不存在）
+```
+preset（行配置 handRoute / reviewRoute）
+  → session（镜像 sessions[<id>].hand / .review）
+    → default（镜像 default.hand / .review，兼容顶层 legacy hand）
+      → 都没有 ⇒ missingRouteError（文案里给三个去处与镜像绝对路径）
 ```
 
-**裁掉的相位是「不存在」，不是「存在但不查」** —— `recordArtifact` 对不在序列里的相位
-报 `not one of them`（不是"还没到"），`gateGaps` 只对序列里的相位要产物。
+- **review 回落**：没有显式 review 时复用 hand，`source` 报 `<session|default>-fallback`。
+  这是"执行者在审自己"的信号，调用方必须能看见 —— 所以 `source` 是回执的一部分，不是日志。
+- **brain 不可派发**：`brain` 是**会话模型**（决策 / 产物 / 与用户对话），不是可派的位子；
+  镜像里的 `brain` 与行配置的 `brainRoute` 只做只读兼容展示（`consumer: null`）。
+  派发角色只有 `hand` / `review` / `lite`。
+- **一致性**：宿主面 `readRoutesConfig`（`index.js`）与工具面 `resolveRoute`（`lib/dispatch.mjs`）
+  是两套实现，`tests/dispatch.spec.mjs` 用同一份镜像逐字段对拍，防止"页面说 X、工具用 Y"。
 
-`size`：`light` ⇒ 设计相位的用户要点由 brain 自写（`briefingSourceFor` 返回 `inline`），
-且 `consultPhasesFor` 返回空（零 review child）。
+## 4. 派发契约（双宿主）
 
-`shape` / `size` / `workflow` 都**随任务落盘**（`createTask` 的 meta）—— 之后改行配置
-不换在途任务的语义。
-
----
-
-## 4. 门、契约与两种裁决
-
-### 内容契约（写入时就挡）
-
-`plan.md` 必须有：
-
-- **每个 `### Task` 块一份 `**Interfaces:**`**（含 `Consumes` / `Produces`）
-- `## Global Constraints`（spec 的项目级约束，逐字抄）
-- `## Review Focus`（spec 暗示但没被任务的测试覆盖的输入类）
-
-判据刻意**钝**（同 `openDecisions` 的理由）：小节标题 + 关键词的字面出现，围栏内的不算。
-聪明的解析会漏掉一节，而漏掉那节正是计划不可执行的原因。
-
-`assertPlanContract` 在 `recordArtifact(phase:'plan')` 与 `recordPlanAcceptance` 落盘前调；
-`gateGaps` 仍在门上兜（defense in depth：盘上的文件可能被人手改过）。
-
-### 两种裁决
-
-| | `smart_decide` | `smart_ruling` |
+| 宿主 | 调用 | 返回 |
 | --- | --- | --- |
-| 谁定 | **用户** | 模型 |
-| 落点 | `state.decisions` | `state.rulings` |
-| 分流判据 | *这件事只有用户能定吗？* | 能定的不许替他定，不能定的不许卡住 |
+| 0.2.x | `subagents.startActivation({ provider:'spawn', label, request, signal, delivery:'caller' })` | `{ childId, result(), dispose() }` |
+| 0.1.x | `subagents.start('spawn', { label, prompt, parent, agentOptions, signal })` | `{ result(), dispose() }` |
 
-`recordRuling` 要求三段（`decision` / `why` / `costIfWrong`）**都非空** —— 只写决定不写代价的
-裁决，事后没法判断该不该回滚。执行报告的 `## Rulings` 小节由 `rulingsFromReport` 折叠进
-state，拆不出三段的整条丢弃并照实计数。
+两条坑都在这套代码里踩过，`lib/dispatch.mjs` 的 `startChild` 一并收口：
 
-有裁决时 `smart_finish` 要求收尾总结**提到裁决**（判据钝：正文里出现「裁决」或 `Ruling`）。
+- `result` 是**方法**不是属性（老实现 `await handle.result` 等到的是函数本身，调用方读到 `undefined`）；
+- activation 句柄挂着 Cordis 代理，只能让 `result` 的值离开函数（`JSON.stringify(handle)` 会炸 `toJSON`）。
 
-### 要点回路
+## 5. 文档契约（`lib/doc-contract.mjs`）
 
-产物落盘 → `smart_brief` 生成用户版要点 → 对话讨论 → `smart_brief_confirm` → 门开。
-要点要覆盖产物的每个 `##` 小节（`missingBriefingSections`），缺节不写轮。
+| 文件 | 判据 |
+| --- | --- |
+| 计划 | `## Global Constraints`、`## Review Focus`；每个 `^### Task` 块里一份 `**Interfaces:**`，且含 `Consumes` / `Produces` |
+| 验收 | 含「验收」的 `##` 节；至少一条 `- [ ]`；每条同时含「检查」与「预期」；不得留「需要你裁决」节 |
 
-`source` 如实记：review 路由生成记 `preset`/`session`/`default`，brain 自写记 `brain/session`
-（provider/model 为空 —— **不伪装成独立评审**）。
+判据刻意钝（标题 + 关键词）：聪明的解析漏掉一节，比偶尔多报更糟。
 
----
+## 6. 面板（`src/client/index.tsx`）
 
-## 5. 路由：三条规则
+一张卡：`hand` / `review` 两个输入框（`brain` 只读）、模型目录下拉（`modelDirectories`，
+不可用时退回手填并说明原因）、「当前生效」一栏（值 + 来源层）。
+写路径只有 `POST /fly/smart/routes`。
 
-形态 `provider/model[@effort]`（`parseRouteValue` 只切**第一个** `/`，多斜杠 model id 安全）
-或 `{ provider, model, reasoningEffort? }`。
+样式：`workbench-css.ts` 是设计系统的**逐字节副本**（`scripts/sync-panel-style.mjs --check`
+在门禁里比对），不要手改。
 
-三个来源：行配置 → 面板（写 `~/.dsh-fly/smart-routes.json`）→ 手改镜像。都没配时
-**大声报错并指路**。
+## 7. 技能（`assets/`）
 
-1. **终审不许回落** —— `assertFinalReviewRoute(source)` 只认 `preset`/`session`/`default`，
-   `*-fallback` 一律拒。回落链最坏会跑到执行者那条上。
-2. **返工升档** —— `escalatedEffort(route, attempts, supported)`：`attempts ≥ 2`（**第 3 稿起**；
-   `attempts` 数的是返工次数、不是第几稿）把 effort 提到该模型支持的最高档；查不到档位表
-   原样返回并标 `escalated: false`（不猜、不造档位名）。轮次记 `escalated` / `attempts`。
-3. **档位按路由查** —— `supportedEffortsOf(exec, route)`，**不写死 brainRoute**：
-   拿 brain 的档位表去抬 review 的 effort 会造出该模型没有的档位名。
+`assets/<name>/SKILL.md`，frontmatter 只有 `name` + `description`。
+**注册时一次性展开**：加/改技能必须重启进程（刷新页面不够），原因见 §8。
 
----
+门禁有一条死引用钉子：`assets/` 里出现已删工作流工具的名字即红
+（正则排除 `/smart-routes.json` 与 `assets/smart-*/` 这类现役路径）。
 
-## 6. 评审包与派发卫生
-
-`gitHeadOf(dir)` 只读 `.git`（工具层没有 shell 座位，也不该为此加一个）：支持 `.git` 目录、
-worktree/submodule 的 `gitdir:` 指针、`ref:` 与 `packed-refs`。**取在派发前** ——
-派发后再算会漏掉多 commit 任务的前面那些（绝不 `HEAD~1`）。
-
-执行者落 `evidence/changes.md`（`git log --oneline BASE..HEAD` + `--stat` + `-U10`）。
-`smart_verify` 与写裁决的那位都读它；没落就**照实说没有**，不假装、不代编。
-
-`DISPATCH_HYGIENE` 是**一份答案**，五条 prompt（briefing / bundle / consult / execute / verify）
-共同引用：不自派子代理、大输出走文件、遇计划缺陷自己定并记 `## Rulings`、只有四种理由停下来。
-
----
-
-## 7. workflow 策略
-
-| | `v1` | `optimized` |
-| --- | --- | --- |
-| brainstorm 的独立 consult | 必须有 | 不要求 |
-| brainstorm 的用户版要点 | review 路由生成 | brain 自写（`brain/session`） |
-| design / plan / acceptance | 各 1 consult + 1 要点 | **合成一次 review bundle**（同一 child 出两段） |
-| plan 与 acceptance | 两阶段两道门 | **一对产物一次原子写入**（`writeAtomicMany`），G3 过直接进执行 |
-
-bundle 两段用固定分隔行（`=== BRIEFING ===` / `=== CONSULT ===`）；缺段或空段 ⇒
-**fail closed**：产物保留、要点记失败、**consult 一行都不写**、可重试。
-`smart_consult` 先查 `freshReviewBundle`（按 artifact sha + 伴随 sha，**不按时间**）。
-
----
-
-## 8. 宿主契约
-
-0.1.3 在 DSH 0.2.x 上报 `subagents.start is not a function`。现在：
-
-```js
-const activation = await subagents.startActivation({
-  provider: 'spawn', label,
-  request: { prompt: [{ type: 'text', text }], parent, agentOptions },
-  signal, delivery: 'caller',   // 结果只回给调用方，不往父会话塞通知
-})
-const { output, stopReason } = await activation.result
-await activation.dispose()
-```
-
-0.1.4 起**两条都支持**（有 `startActivation` 走新面，没有退回老 `start`）。
-
-**能力损失，如实记**：新宿主 `SubagentStartRequest` 里**没有 `toolFilter`**
-（只剩在冷恢复描述符里）⇒ "给孩子禁 `smart_*`"下发不了，由工具层自守补偿。
-`smart_verify` 的只读名单（禁 `write`/`edit`）**只在老宿主生效**，新宿主上取证 child 仍有写工具。
-
----
-
-## 9. 装 / 开发 / 验证
+## 8. 装 / 开发 / 验证
 
 - 宿主通过 `plugins.lock.json` 解析本仓（工作区 `$FLY_PLUGINS_DIR`，缺省 `../dsh-plugins`）
 - 本仓要**自己 install 一次**（测试 import 引擎 peer）：`pnpm install`
@@ -191,15 +96,14 @@ await activation.dispose()
   `provider = create(control)` 只调**一次**（`dsh-skill/lib/index.js:147`），
   `smartSkillProvider()` 于是在**那一刻**把 `bundledSkills()` 读成固定数组、`list()` 只是
   闭包返回它 ⇒ 之后往磁盘加技能，这个进程永远看不见。
-  实测（2026-10-23）：磁盘 10 个技能，运行中的 dev app 目录里仍是 7 个（差 `smart-diagnose`
-  / `smart-parallel` / `smart-write-skill`），重启后才有 10 个。
+  实测（2026-10-23）：磁盘 10 个技能，运行中的 dev app 目录里仍是 7 个，重启后才有 10 个。
   这是**设计**不是 bug（`apply()` 的注释要求"注册时就展开全部技能"，少一个 SKILL.md 或
   frontmatter 缺键要当场抛），代价就是"加技能必须重启" —— 试运行手册把它列成开跑前的第 1 步。
 - 宿主侧集成验收在 dsh-fly 仓 `scripts/verify-smart-integration.mjs`
 
 ### 纪律（都在这套代码里踩过）
 
-- **桩必须与真接缝同形**：`tests/seams.mjs` 的 `childService` 同时给 `startActivation` 与 `start`
+- **桩必须与真接缝同形**：`tests/dispatch.spec.mjs` 的 `activationStub` / `startStub` 分别按两条真契约发
   —— 老桩只给 `start` 曾让整版绿在一条真机上不存在的路上
 - **A/B 的变异要贴真实失败模式**：加注释当变异会因语法错红，那不算证据
 - **闸门不静默放宽**：裁剪 = 相位不存在，不是"存在但不查"
@@ -207,7 +111,7 @@ await activation.dispose()
 
 ---
 
-## 10. 投稿 / 发布
+## 9. 投稿 / 发布
 
 市场是**投稿审核制**，不是推上去就上架。顺序：**先跑完 Public 试运行**
 （[`public-trial.md`](public-trial.md)）再投稿。文案要点三条：移植自谁（归因）·

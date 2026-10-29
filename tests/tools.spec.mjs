@@ -1,10 +1,19 @@
 /**
- * Contract tests for the smart-mode tool surface (`index.js`).
+ * Contract tests for the slim tool surface (0.3.0): `smart_dispatch` + `smart_check_doc`.
  *
- * The tools are exercised against a stub `ctx` that records registrations — the
- * same convention the other Fly packages use — so the test pins the *tool
- * contract* (names, parameters, render, error behaviour) without booting a
- * profile. Filesystem work happens in a scratch dir outside the repo.
+ * The 0.2.x suite asserted 14 workflow tools; asserting "two, no more" is the whole
+ * point of the slim-down, so the first test is the registry itself. The rest pin the
+ * failures that already happened once:
+ *
+ *   - **both host contracts** — `startActivation` (0.2.x, `result` is a *method*) and
+ *     `start` (0.1.x); a stub in the wrong shape makes the suite green against a
+ *     contract that does not exist;
+ *   - **the route actually reaches `agentOptions`** — a route resolved and then
+ *     dropped is "the panel says X, the tool uses the default";
+ *   - **children cannot dispatch** — the host no longer restricts a child's tools, so
+ *     the plugin has to refuse;
+ *   - **the document checks report every gap** and refuse a relative path (the host
+ *     cwd is `/` in the desktop shell; a relative path would read the wrong file).
  *
  * Run: node --test tests/*.spec.mjs
  */
@@ -12,195 +21,137 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import './scratch-home.mjs'
-import { existsSync, mkdtempSync, rmSync } from 'node:fs'
-import { homedir, tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
-import { fileURLToPath, pathToFileURL } from 'node:url'
-import { readState, resolveConfig } from '../lib/state.mjs'
-import { BRIEF_CONFIRM, briefingText, childService, GATE_PASS } from './seams.mjs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { apply, inject, name } from '../tools/index.js'
 
-const packageRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
-
-/** Cache-busting counter (Date.now() can collide within a millisecond). */
-let loadCount = 0
-
-/** Apply the plugin against a recording `ctx` and hand back its tools. */
-async function load(config) {
-  const mod = await import(`${pathToFileURL(join(packageRoot, 'tools', 'index.js')).href}?t=${++loadCount}`)
-  const tools = new Map()
-  const calls = { start: 0, ask: 0 }
-  // 座位齐全：`inject` 里声明的三个服务都得在，否则 apply 会在读服务时抛
-  //（真 cordis 的行为，见 tools 里那条 inject 断言）。能力缝（subagents / userQuestions）
-  // 走 ctx.get，这里给最小桩：自动 briefing 会spawn，确认卡按 id 分派应答（B1）。
-  mod.apply({
-    tools: { register: definition => tools.set(definition.name, definition) },
-    systemPrompt: { section: () => () => {} },
-    commands: { register: () => () => {} },
-    get: name => ({
-      subagents: childService(async (provider, request) => {
-          calls.start += 1
-          return {
-            id: `child-${calls.start}`,
-            localAgent: undefined,
-            result: Promise.resolve({
-              output: [{ type: 'text', text: request.prompt[0].text.includes('briefing') ? briefingText(request.prompt[0].text) : '# 手模型产出' }],
-              stopReason: 'completed',
-            }),
-            dispose: async () => {},
-        }
-      }),
-      userQuestions: {
-        ask: async question => {
-          calls.ask += 1
-          const card = question.questions[0]
-          return { answers: [{ id: card.id, selected: [card.id.startsWith('smart-brief-') ? BRIEF_CONFIRM : GATE_PASS] }] }
-        },
-      },
-    })[name],
-  }, { allowGlobalRoot: true, ...config })
-  return { mod, tools, calls }
+/** A tools registry stub in the cordis shape `apply` sees. */
+function toolHarness(services = {}) {
+  const registered = new Map()
+  const ctx = {
+    tools: { register: definition => { registered.set(definition.name, definition) } },
+    get: serviceName => services[serviceName],
+  }
+  apply(ctx, { handRoute: undefined, reviewRoute: undefined })
+  return registered
 }
 
-/** Minimal execution context: a signal and an agent identity. */
-const exec = (session = {}) => ({ signal: new AbortController().signal, agent: { session } })
+/** The execution envelope a tool's `execute(args, exec)` receives. */
+const execFor = (header = {}) => ({ agent: { session: { id: 'session-1', header } }, signal: undefined })
 
-function scratch(t) {
-  const dir = mkdtempSync(join(tmpdir(), 'fly-smart-tools-'))
-  t.after(() => rmSync(dir, { recursive: true, force: true }))
-  return dir
+/** A 0.2.x subagent stub: `startActivation` → `{ childId, result(): Promise, dispose() }`. */
+function activationStub(seen, text = 'ok') {
+  return {
+    startActivation: async request => {
+      seen.push(request)
+      return {
+        childId: 'child-1',
+        result: async () => ({ output: [{ type: 'text', text }], stopReason: 'completed' }),
+        dispose: async () => {},
+      }
+    },
+  }
 }
 
-test('the plugin registers exactly its tool surface', async () => {
-  const { mod, tools } = await load({ rootDir: '/tmp/never-used' })
-  assert.equal(mod.name, 'fly-smart')
-  // 声明面必须覆盖**读到的每个服务**：cordis 4 对未声明的服务属性访问直接抛
-  //（`cannot get property "systemPrompt" without inject`），而 apply 里的一抛会被
-  // preset 的激活审计当成整棵挂载失败 —— 症状是会话根本组不起来，不是少个命令。
-  // 按集合断：顺序不算契约，少一行则红。
-  assert.deepEqual([...mod.inject].sort(), ['commands', 'systemPrompt', 'tools'])
-  // S1 的三个 + S2 的评审与门。工具面就是工作流的全部入口，多一个少一个都要有人管。
-  assert.deepEqual([...tools.keys()], ['smart_begin', 'smart_artifact', 'smart_consult', 'smart_decide', 'smart_ruling', 'smart_brief', 'smart_brief_confirm', 'smart_gate', 'smart_execute', 'smart_verify', 'smart_rework', 'smart_finish', 'smart_status'])
-  // A4 的防伪造面：确认工具的 schema **不含** decision/confirm 类参数 —— 确认只能来自
-  // 卡片应答。变异（把 decision 改成读参数）会被这条钉住。
-  assert.deepEqual(Object.keys(tools.get('smart_brief_confirm').parameters.properties), ['taskId'])
-  assert.deepEqual(Object.keys(tools.get('smart_brief').parameters.properties), ['taskId'])
-  for (const definition of tools.values()) {
-    assert.equal(typeof definition.description, 'string')
-    assert.equal(typeof definition.execute, 'function')
-    assert.deepEqual(definition.output.render(null, 'x'), [{ type: 'text', text: 'x' }])
+/** A 0.1.x subagent stub: `start(name, request)` → `{ result, dispose }`. */
+function startStub(seen, text = 'old') {
+  return {
+    start: async (provider, request) => {
+      seen.push({ provider, request })
+      return { result: async () => ({ output: [{ type: 'text', text }], stopReason: 'completed' }), dispose: async () => {} }
+    },
   }
-  // 阶段顺序是**代码**行为：参数必须把 phase 收成枚举，模型没得选错。
-  // defineTool 会把 parameters 规范成 JSON Schema（properties 下），断言按规范化后的形状写。
-  assert.deepEqual(
-    tools.get('smart_artifact').parameters.properties.phase.enum,
-    ['brainstorm', 'design', 'plan', 'acceptance', 'executing', 'reviewing'],
-  )
-  // 裁决工具的契约：问题必填，选项是**对象**（与上游 ask_user_question 同形）—— 选项写字符串
-  // 会在参数校验就被 ToolArgsError 挡下（真跑过：单测里传字符串当场红），所以形状要钉住。
-  assert.deepEqual(tools.get('smart_decide').parameters.required, ['questions'])
-  assert.equal(tools.get('smart_decide').parameters.properties.questions.items.properties.question.type, 'string')
-  assert.equal(tools.get('smart_decide').parameters.properties.questions.items.properties.options.items.properties.label.type, 'string')
+}
+
+const mirrorDir = mkdtempSync(join(tmpdir(), 'fly-smart-mirror-'))
+const mirrorPath = join(mirrorDir, 'smart-routes.json')
+writeFileSync(mirrorPath, JSON.stringify({ version: 2, default: { hand: 'p/m', review: 'p/r' } }))
+process.env.DSH_FLY_SMART_ROUTES = mirrorPath
+
+test('the registry is exactly two tools, and the plugin declares only the tools seat', () => {
+  assert.equal(name, 'fly-smart')
+  assert.deepEqual(inject, ['tools'], 'inject must shrink with the workflow: commands/systemPrompt are gone')
+  const tools = toolHarness()
+  assert.deepEqual([...tools.keys()].sort(), ['smart_check_doc', 'smart_dispatch'])
 })
 
-test('begin → artifact → status drives the machine per session', async t => {
-  const { tools } = await load({ rootDir: scratch(t), enabled: true, requireConsult: true, handRoute: { provider: 'deepseek', model: 'flash' } })
-  const session = {}
-  const begun = JSON.parse(await tools.get('smart_begin').execute({ title: 'ship the widget', goal: '活干完' }, exec(session)))
-  assert.equal(begun.phase, 'brainstorm')
-  assert.equal(begun.awaitingGate, null)
-  assert.match(begun.taskId, /-ship-the-widget$/u)
-  // 中文标题不留汉字：目录名要躲开 macOS 的 NFD 归一化（同名字符串比较会失手），
-  // 标题本身存在 state/index 里给工作台显示，id 只负责安全。
-  // 2026-10-12 起时间戳那半是**本地日期**（`YYYY-MM-DD`），同一天第二个任务自动带 `-2` 序号
-  // ⇒ 这里容忍序号（本用例里它不是当天第一个任务）。
-  const cn = JSON.parse(await tools.get('smart_begin').execute({ title: '中文任务' }, exec({})))
-  assert.match(cn.taskId, /^\d{4}-\d{2}-\d{2}(-\d+)?$/u)
-
-  const recorded = JSON.parse(await tools.get('smart_artifact').execute({ phase: 'brainstorm', markdown: '# 脑暴' }, exec(session)))
-  // 落盘不开门（A5）：自动 briefing 生成好，等用户在卡上确认。
-  assert.equal(recorded.awaitingGate, null)
-  assert.equal(recorded.briefingFailed, undefined)
-  assert.deepEqual(recorded.gaps, ['no gate is open'])
-
-  const confirmed = JSON.parse(await tools.get('smart_brief_confirm').execute({}, exec(session)))
-  assert.equal(confirmed.briefingDecision, 'confirm')
-  assert.equal(confirmed.awaitingGate, 'G1')
-  // 过门条件未满足时，状态必须把缺口说出来，而不是"看起来能继续"。
-  assert.deepEqual(confirmed.gaps, ['missing consult record for "brainstorm" (requireConsult)'])
-
-  const status = JSON.parse(await tools.get('smart_status').execute({}, exec(session)))
-  assert.equal(status.taskId, begun.taskId)
-  assert.equal(status.awaitingGate, 'G1')
-  assert.deepEqual(status.consults, [])
-
-  await assert.rejects(
-    tools.get('smart_artifact').execute({ phase: 'design', markdown: '# 设计' }, exec(session)),
-    /is in phase "brainstorm"/u,
-  )
+test('smart_dispatch runs on the configured hand route and reports route + source', async () => {
+  const seen = []
+  const tools = toolHarness({ subagents: activationStub(seen) })
+  const tool = tools.get('smart_dispatch')
+  const out = JSON.parse(await tool.execute({ prompt: 'do it' }, execFor()))
+  assert.equal(out.text, 'ok')
+  assert.deepEqual(out.route, { provider: 'p', model: 'm' })
+  assert.equal(out.source, 'default')
+  assert.deepEqual(seen[0].request.agentOptions, { provider: 'p', model: 'm' })
+  assert.equal(seen[0].provider, 'spawn')
 })
 
-test('sessions do not share an active task', async t => {
-  const { tools } = await load({ rootDir: scratch(t) })
-  const a = {}
-  const b = {}
-  const first = JSON.parse(await tools.get('smart_begin').execute({ title: 'session one' }, exec(a)))
-  const second = JSON.parse(await tools.get('smart_begin').execute({ title: 'session two' }, exec(b)))
-  assert.notEqual(first.taskId, second.taskId)
-
-  // 每个会话只认自己的任务：B 的产物落进 B，A 的产物落进 A。
-  await tools.get('smart_artifact').execute({ phase: 'brainstorm', markdown: '# 一' }, exec(a))
-  const statusA = JSON.parse(await tools.get('smart_status').execute({}, exec(a)))
-  const statusB = JSON.parse(await tools.get('smart_status').execute({}, exec(b)))
-  assert.equal(statusA.taskId, first.taskId)
-  assert.deepEqual(Object.keys(statusA.artifacts), ['brainstorm'])
-  assert.equal(statusB.taskId, second.taskId)
-  assert.deepEqual(statusB.artifacts, {})
-
-  // 没有活动任务的会话不许"顺手"写进别人的任务 —— 只能显式带 taskId 或先 begin。
-  await assert.rejects(
-    tools.get('smart_artifact').execute({ phase: 'brainstorm', markdown: '# 偷写' }, exec({})),
-    /no active task in this session/u,
-  )
+test('smart_dispatch honours the old host contract too', async () => {
+  const seen = []
+  const tools = toolHarness({ subagents: startStub(seen) })
+  const out = JSON.parse(await tools.get('smart_dispatch').execute({ prompt: 'do it' }, execFor()))
+  assert.equal(out.text, 'old')
+  assert.equal(seen[0].provider, 'spawn')
+  assert.deepEqual(seen[0].request.agentOptions, { provider: 'p', model: 'm' })
 })
 
-test('a row rootDir without allowGlobalRoot is refused, and with it the row root wins', async t => {
-  // 回归两件事：
-  //   1. `apply(ctx, { rootDir, ...resolveConfig({}) })` 会被 undefined 顶掉根目录，
-  //      把测试任务写进用户真实 home（verify-smart 踩过一次）。显式根目录必须永远赢。
-  //   2. 行 rootDir 必须显式承认它压掉了每个会话的工作区根（allowGlobalRoot）；少了它
-  //      要在**挂载时**大声报错，而不是静默把产物写到没人看的地方（acceptance.md Y1）。
-  const rootDir = scratch(t)
-  const resolved = resolveConfig({ enabled: true, maxRework: 3, requireConsult: true })
-  await assert.rejects(
-    load({ ...resolved, rootDir }),
-    /allowGlobalRoot: true/u,
-    'a row rootDir without allowGlobalRoot must be refused at mount time',
-  )
-
-  const { tools } = await load({ ...resolved, rootDir, allowGlobalRoot: true })
-  const begun = JSON.parse(await tools.get('smart_begin').execute({ title: 'root check' }, exec({})))
-  assert.equal(readState(rootDir, begun.taskId)?.id, begun.taskId)
-  assert.equal(begun.rootSource, 'preset')
-  // 而且不许在真实 home 留下任何一份副本 —— 只读检查，不动用户目录。
-  assert.equal(existsSync(join(homedir(), '.dsh-fly', 'smart', 'tasks', begun.taskId)), false)
+test('smart_dispatch role=review uses the review route', async () => {
+  const tools = toolHarness({ subagents: activationStub([]) })
+  const out = JSON.parse(await tools.get('smart_dispatch').execute({ prompt: 'audit', role: 'review' }, execFor()))
+  assert.deepEqual(out.route, { provider: 'p', model: 'r' })
 })
 
-test('an unknown task and a disabled row both fail loudly', async t => {
-  const { tools } = await load({ rootDir: scratch(t) })
-  await tools.get('smart_begin').execute({ title: 'known' }, exec({}))
-  await assert.rejects(tools.get('smart_status').execute({ taskId: 'nope' }, exec({})), /no such task/u)
-
-  const { tools: off } = await load({ rootDir: scratch(t), enabled: false })
-  for (const name of ['smart_begin', 'smart_artifact', 'smart_consult', 'smart_brief', 'smart_brief_confirm', 'smart_gate', 'smart_execute', 'smart_verify', 'smart_rework', 'smart_finish', 'smart_status']) {
-    await assert.rejects(off.get(name).execute({}, exec({})), /smart mode is disabled/u)
-  }
+test('smart_dispatch role=lite uses the lite route and reports it', async () => {
+  // smart_dispatch 每次现读 SCRATCH_MIRROR（工具面不收 mirrorPath），所以写那份。
+  writeFileSync(mirrorPath, JSON.stringify({ version: 2, default: { hand: 'p/h', lite: 'p/l' } }))
+  const tools = toolHarness({ subagents: activationStub([]) })
+  const out = JSON.parse(await tools.get('smart_dispatch').execute({ prompt: 'scan it', role: 'lite' }, execFor()))
+  assert.deepEqual(out.route, { provider: 'p', model: 'l' })
+  assert.equal(out.source, 'default')
+  // lite 不回落：没有 lite 层时大声报错，而不是静默用 hand（贵模型跑机械活）。
+  writeFileSync(mirrorPath, JSON.stringify({ version: 2, default: { hand: 'p/h' } }))
+  await assert.rejects(() => tools.get('smart_dispatch').execute({ prompt: 'scan it', role: 'lite' }, execFor()), /no lite model is configured/)
+  writeFileSync(mirrorPath, JSON.stringify({ version: 2, default: { hand: 'p/m', review: 'p/r' } }))
 })
 
-test('status without an active task lists what exists instead of throwing', async t => {
-  const { tools } = await load({ rootDir: scratch(t) })
-  const first = JSON.parse(await tools.get('smart_begin').execute({ title: 'listed' }, exec({})))
-  // 换一个"会话"后没有活动任务，但磁盘上有任务：应当列出索引供模型自己挑。
-  const listed = JSON.parse(await tools.get('smart_status').execute({}, { signal: new AbortController().signal, agent: { session: { fresh: true } } }))
-  assert.equal(listed.active, null)
-  assert.deepEqual(listed.tasks.map(row => row.id), [first.taskId])
+test('smart_dispatch refuses: empty prompt, missing service, and a child session', async () => {
+  const tools = toolHarness({ subagents: activationStub([]) })
+  await assert.rejects(() => tools.get('smart_dispatch').execute({ prompt: '  ' }, execFor()), /non-empty `prompt`/)
+  const noService = toolHarness({})
+  await assert.rejects(() => noService.get('smart_dispatch').execute({ prompt: 'x' }, execFor()), /subagent service .* unavailable/)
+  await assert.rejects(() => tools.get('smart_dispatch').execute({ prompt: 'x' }, execFor({ origin: 'subagent' })), /subagent child/)
+  await assert.rejects(() => tools.get('smart_dispatch').execute({ prompt: 'x' }, execFor({ delegationDepth: 2 })), /subagent child/)
+})
+
+test('smart_check_doc reports every plan gap at once, and says ok on a complete plan', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'fly-smart-doc-'))
+  const bad = join(dir, 'plan.md')
+  writeFileSync(bad, '# plan\n\n### Task 1: x\n\n- [ ] step\n')
+  const tools = toolHarness()
+  const failed = JSON.parse(await tools.get('smart_check_doc').execute({ path: bad }, execFor()))
+  assert.equal(failed.ok, false)
+  assert.equal(failed.kind, 'plan')
+  assert.ok(failed.gaps.some(gap => gap.includes('Global Constraints')))
+  assert.ok(failed.gaps.some(gap => gap.includes('Review Focus')))
+
+  const good = join(dir, 'ok.md')
+  writeFileSync(good, `# ok\n\n## Global Constraints\n\n1. x\n\n## Review Focus\n\n1. y\n\n### Task 1: a\n\n**Interfaces:**\n- Consumes: none\n- Produces: f()\n`)
+  const passed = JSON.parse(await tools.get('smart_check_doc').execute({ path: good }, execFor()))
+  assert.equal(passed.ok, true, passed.gaps.join('|'))
+  rmSync(dir, { recursive: true, force: true })
+})
+
+test('smart_check_doc infers acceptance by suffix and refuses relative paths', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'fly-smart-doc2-'))
+  const file = join(dir, 'x-acceptance.md')
+  writeFileSync(file, '# x 验收\n\n## 验收标准\n\n- [ ] **A1** —— 检查：跑测试；预期：全绿。\n')
+  const tools = toolHarness()
+  const out = JSON.parse(await tools.get('smart_check_doc').execute({ path: file }, execFor()))
+  assert.equal(out.kind, 'acceptance')
+  assert.equal(out.ok, true, out.gaps.join('|'))
+  await assert.rejects(() => tools.get('smart_check_doc').execute({ path: 'docs/plans/x.md' }, execFor()), /ABSOLUTE path/)
+  await assert.rejects(() => tools.get('smart_check_doc').execute({ path: join(dir, 'nope.md') }, execFor()), /no such file/)
+  rmSync(dir, { recursive: true, force: true })
 })

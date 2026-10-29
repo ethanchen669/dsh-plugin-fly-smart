@@ -20,7 +20,7 @@ description: Use when starting any task in this profile — establishes how to f
 **任何回应或动作之前先调用相关或被要求的技能** —— 包括反问、探索代码库、查看文件。
 如果调用后发现不适用，你不必照它做。
 
-**进入计划之前**：如果还没做过脑暴，先调用 `smart-brainstorm`。
+**进入计划之前**：如果还没做过脑暴，先调用 `smart-brainstorm`（决策表：问题 / 候选 / 当前倾向 / 未决问题）。
 
 然后声明「Using [技能名] to [目的]」，并逐条照技能执行。技能里有清单的，每条建一个 todo。
 
@@ -28,35 +28,43 @@ description: Use when starting any task in this profile — establishes how to f
 
 多个技能都适用时，**流程技能在前** —— 它们定路子，实现类技能再去执行。
 
-- **「建个东西」**（加功能、做组件、改行为）→ 先 `smart-brainstorm`，再进工作流
-- **「修个 bug」/ 行为不对** → 先 `smart-debug`，再决定要不要开任务
+- **「建个东西」**（加功能、做组件、改行为）→ 先 `smart-brainstorm` 定方案，再 `smart-design` 定形状，取舍留档 `smart-adr`，最后写计划（`smart-plan`）
+- **「修个 bug」/ 行为不对** → 先 `smart-debug`，修完用 `smart-verify-claim` 收尾
 - **要写多步计划** → `smart-plan`
+- **要把计划跑完** → `smart-execute`（台账 + 裁定 + 终审）
+- **跑完了，怎么落地** → `smart-finish`（合并 / PR / 保留）
 - **写任何生产代码之前** → `smart-tdd`
+- **要定义「怎么算过」** → `smart-acceptance`（fixture / gate / probe，先于实现写）
 - **即将声称完成 / 测试通过** → `smart-verify-claim`
+- **要审别人的代码或产物** → `smart-review`（阻塞 / 非阻塞 / 需要裁决三档，每条带复现）
 - **收到评审意见** → `smart-review-receive`
 - **开始特性工作** → `smart-worktree`
 - **2+ 个互不相干的任务** → `smart-parallel`
 - **创建/修改技能** → `smart-write-skill`
-- **某个 smart 会话出了问题**（卡住 / 门不开 / 重复派发 / 花太多）→ `smart-diagnose`
+- **模型路由 / 派发子代理出了问题**（用错模型、`smart_dispatch` 报错）→ `smart-diagnose`
 
-## 什么时候才开 smart 任务
+## 什么时候写计划 / 验收文件
 
-技能是**独立的**，多数日常事不需要开任务：
+技能是**独立的**，多数日常事**不写文件**：
 
 | 你在做的事 | 该走 |
 | --- | --- |
-| 排查一个 bug、定位一个失败 | `smart-debug`（**不开任务**） |
-| 写一小段代码 | `smart-tdd`（**不开任务**） |
-| 看看这个 diff / 这段改动 | `smart_begin({ shape: 'review' })` |
-| 修一处、要留证据 | `smart_begin({ shape: 'fix' })` |
-| 调查个问题、出个结论 | `smart_begin({ shape: 'investigation' })` |
-| 小改动 | `smart_begin({ size: 'light' })` |
-| 完整交付一个功能 | `smart_begin({ shape: 'feature', size: 'full' })` |
-| 写个技能 | `smart-write-skill`（**不开任务**） |
-| 会话出了问题、想查为什么 | `smart-diagnose`（**不开任务**） |
+| 排查一个 bug、定位一个失败 | `smart-debug`（不写文件） |
+| 写一小段代码 | `smart-tdd`（不写文件） |
+| 写个技能 | `smart-write-skill`（不写文件） |
+| 看看这个 diff / 这段改动 | `smart-review`（不写文件，出评审报告） |
+| 想清方案、摆出候选再选 | `smart-brainstorm`（不写文件，出决策表） |
+| 方案定了、要展开成实现形状 | `smart-design`（组件/接口/数据/错误五问） |
+| 设计取舍要长期留档 | `smart-adr`（ADR-lite 五段，写进 docs/adr/ 或计划的约束节） |
+| 多步实现、别人（或另一个模型）要照着干 | `smart-plan` → 写 `docs/plans/<日期>-<名字>.md` |
+| 计划写好了，开始跑 | `smart-execute`（台账落 `.dsh-fly/exec/`；压缩后信台账） |
+| 跑完了，要落地 | `smart-finish`（先验证，再给三个集成选项） |
+| 要交付、要人验收 | 先 `smart-acceptance` 写 `<同名>-acceptance.md`（fixture/gate/probe），收尾用 `smart-verify-claim` |
+| 会话/路由出了问题 | `smart-diagnose`（不写文件） |
 
-**判断依据**：只有当这件事需要**别人的把关**（用户门 G1–G5）或**留档交付**时，才值得开任务。
-排查、写测试、验证声明 —— 这些用技能就够。
+**判断依据**：只有当这件事要**别人接手**（换会话、换模型、过几天回来）或**要人验收**时，
+才值得落成文件。落盘就用项目里普通的 `docs/plans/`，没有单独的产物目录、没有状态机。
+写完用 `smart_check_doc` 校验契约（`plan` 缺 Interfaces/Global Constraints/Review Focus 会逐条报出来）。
 
 ## 你正在找借口
 
@@ -83,12 +91,15 @@ description: Use when starting any task in this profile — establishes how to f
 
 **技能派出去的子代理**按 route 选：
 
-- 机械活（探索 / 取证 / 并行调查）→ `lite` 路由
+- 机械活（探索 / 取证 / 并行调查）→ `lite` 路由（`smart_dispatch({ role: 'lite' })`；不回落，没配就报错）
 - 多步推理、跨多文件理解 → `hand` 路由
-- **评审永远走 `review` 路由**，不用 `lite`
+- **评审永远走 `review` 路由**（`role: 'review'`），不用 `lite`
 
 记住 *"turn count beats token price"*：便宜模型在多步工作上常花 2–3 倍轮次，
 总成本反而更高。纯机械、一步到位的才用 `lite`。
+
+**brain 不是可派发角色**：想方案、做设计、写计划这些**在会话里做**（会话模型就是 brain）；
+`smart_dispatch` 只有 `hand` / `review` / `lite` 三个角色。
 
 ## 用户指令
 

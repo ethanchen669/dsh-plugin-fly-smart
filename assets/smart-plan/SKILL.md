@@ -17,8 +17,9 @@ description: Use when 手上有 spec 或需求、要写多步实现计划、在�
 
 ## 落盘位置
 
-- 在 smart 工作流内，本技能的产物就是 plan.md 的内容：用 `smart_artifact(phase: 'plan')` 落盘，本文档契约的每一节都进那份产物。
-- 在工作流外，落 `docs/plans/YYYY-MM-DD-<name>.md`（用户指定的计划位置优先）。
+- 本技能的产物是**一份普通 markdown**：`docs/plans/<YYYY-MM-DD-<name>.md`，本文档契约的每一节都写进去。
+- 验收契约另存一份：`docs/plans/<YYYY-MM-DD-<name>>-acceptance.md`（计划与验收拆两份，互相链接）。
+- 写完跑 `smart_check_doc`：plan 与 acceptance 的契约缺口会逐条列出来，补齐再交给别人。
 
 ## Scope Check（范围检查）
 
@@ -168,8 +169,9 @@ git commit -m "feat: add specific feature"
 
 > **计划写完了，存在 `<计划路径>`。请过一遍计划。执行方式选哪个？**
 >
-> - **smart 工作流** —— 用 `smart_begin({ size })` 走工作流（有用户门 G1–G5），每个阶段的产物经你确认才推进。最稳；每个阶段多一次往返。
-> - **直接执行** —— 我在本会话里按计划自己逐任务实现，最后整体评审一遍。最快最省；中途没有独立评审。
+> - **自己执行** —— 我在本会话里按计划逐任务实现，最后整体评审一遍。最快最省；中途没有独立评审。
+  执行纪律（台账 / 裁定 / 终审）见 `smart-execute`。
+> - **派给 hand 模型** —— 用 `smart_dispatch({ role: 'hand', prompt })` 把任务派给面板配置的 hand 路由，重要交付再用 `role: 'review'` 派一个独立评审。多一道独立视角；每次派发多一轮。
 >
 > **这份计划我推荐 <二者之一>，因为 <从计划里取一句：任务之间接口依赖有多重、任务有多少个、出货的错代价多大>。计划符合你的意图吗，用哪种方式？**
 
@@ -177,8 +179,12 @@ git commit -m "feat: add specific feature"
 
 > **计划写完了，存在 `<计划路径>`。请过一遍计划，符合你的意图吗？**
 
-选了 smart 工作流就按工作流走（plan.md 之后是 acceptance → executing → reviewing）；选了直接执行就按本计划的任务序号 + 复选框推进，每个任务走完 Step 的测试循环再提交。
+自己执行就按本计划的任务序号 + 复选框推进，每个任务走完 Step 的测试循环再提交；派给 hand 模型则把整个任务块交给 `smart_dispatch`，收回后用 `smart-verify-claim` 对账。
 
-## 与 smart 工作流的关系
+## 与其它技能的关系
 
-smart 的 plan.md 现在只要求「分组步骤、每步验收检查点、回滚点」。本技能的 **Interfaces / Global Constraints / Review Focus** 三块是它缺的，写 plan.md 时一并带上。
+上游：`smart-brainstorm`（方案）→ `smart-design`（形状）→ 本技能（步骤）；验收件由 `smart-acceptance` 先于实现写；计划每个任务的 `**Interfaces:**` 逐字抄设计的「接口」节，不许另发明一套。
+
+## 与工具面的关系
+
+`smart_check_doc` 在写入后校验本文档契约（Interfaces / Global Constraints / Review Focus）；`smart_dispatch({ role: 'review' })` 可以把计划派给评审路由看可行性。

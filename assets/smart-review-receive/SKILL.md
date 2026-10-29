@@ -227,4 +227,4 @@ FOR multi-item feedback:
 
 ## 与 smart 工作流的关系
 
-smart 工作流里 `smart_consult` 的评审建议、`smart_verify` 的证据结论、`smart_brief` 讨论中用户的修改要求 —— 都按本技能处理。**推翻一条评审要有技术论据，采纳一条要复述你改了什么**；不许用「你说得对」糊过去。
+`smart_dispatch({ role: 'review' })` 收回的评审意见、`smart_check_doc` 报出的契约缺口、用户在讨论中提的修改要求 —— 都按本技能处理。**推翻一条评审要有技术论据，采纳一条要复述你改了什么**；不许用「你说得对」糊过去。

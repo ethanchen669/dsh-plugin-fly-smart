@@ -222,9 +222,68 @@ const noBranch = Object.entries(peers)
   .map(([name, range]) => `${name}=${range}`)
 check('peer 范围带显式预发布分支（|| 分支）', noBranch.length === 0, noBranch.join(', '))
 
-// ⑥ 必须文件存在
-for (const rel of ['index.js', 'lib/state.mjs', 'README.md', 'LICENSE', '.gitignore']) {
+// ⑤b 技能不许引用已删的工作流工具（0.3.0）：技能指挥模型去调不存在的工具，
+//    失败形状是"模型照着技能做，第一步就 unknown tool"，而门禁全绿。
+{
+  // `/smart` 只在"不是 smart-xxx"时才算死引用：`/smart-routes.json` 与 `assets/smart-tdd/` 都是现役路径。
+  const DEAD = /\b(?:smart_(?:begin|artifact|gate|verify|execute|finish|consult|decide|ruling|brief|brief_confirm|rework|status))\b|\/smart(?![-_A-Za-z0-9])/u
+  const offenders = []
+  for (const entry of readdirSync(join(ROOT, 'assets'), { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue
+    const file = join(ROOT, 'assets', entry.name, 'SKILL.md')
+    if (!existsSync(file)) continue
+    readFileSync(file, 'utf8').split('\n').forEach((line, index) => {
+      if (DEAD.test(line)) offenders.push(`assets/${entry.name}/SKILL.md:${index + 1}: ${line.trim().slice(0, 80)}`)
+    })
+  }
+  check('技能里没有已删工作流工具的引用', offenders.length === 0, offenders.slice(0, 8).join(' | '))
+}
+
+// ⑤c 技能不许引用不存在的技能（0.3.0 踩过）：写成 `smart-xxx` 但 assets/ 里没有这个目录，
+//    失败形状是"技能让模型去查一个查不到的技能"，而门禁全绿。
+{
+  const available = new Set(readdirSync(join(ROOT, 'assets'), { withFileTypes: true }).filter(entry => entry.isDirectory()).map(entry => entry.name))
+  const dangling = []
+  for (const name of available) {
+    const file = join(ROOT, 'assets', name, 'SKILL.md')
+    if (!existsSync(file)) continue
+    readFileSync(file, 'utf8').split('\n').forEach((line, index) => {
+      for (const match of line.matchAll(/`(smart-[a-z][a-z-]*)`/gu)) {
+        if (!available.has(match[1])) dangling.push(`assets/${name}/SKILL.md:${index + 1}: ${match[1]}`)
+      }
+    })
+  }
+  check('技能里没有指向不存在技能的引用', dangling.length === 0, dangling.slice(0, 6).join(' | '))
+}
+
+// ⑤d 长技能必须拆 references/（渐进披露）：正文超 240 行却一个 references/ 都没有 ⇒ 红；
+//   正文里引用的 references/x.md 必须存在（引用了不存在的文件，读的人会卡在空指针上）。
+{
+  const longSkills = []
+  const danglingRefs = []
+  for (const entry of readdirSync(join(ROOT, 'assets'), { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue
+    const file = join(ROOT, 'assets', entry.name, 'SKILL.md')
+    if (!existsSync(file)) continue
+    const text = readFileSync(file, 'utf8')
+    const lines = text.split('\n').length
+    const refs = [...text.matchAll(/`references\/([A-Za-z0-9._-]+\.md)`/gu)].map(match => match[1])
+    if (lines > 240 && refs.length === 0) longSkills.push(`assets/${entry.name} (${lines} 行)`)
+    for (const ref of new Set(refs)) {
+      if (!existsSync(join(ROOT, 'assets', entry.name, 'references', ref))) danglingRefs.push(`assets/${entry.name}/references/${ref}`)
+    }
+  }
+  check('长技能已拆 references/（正文 > 240 行必须有）', longSkills.length === 0, longSkills.join(' | '))
+  check('技能引用的 references 文件都存在', danglingRefs.length === 0, danglingRefs.join(' | '))
+}
+
+// ⑥ 必须文件存在（0.3.0：lib/state.mjs 与 panel/reader.js 随工作流删除，
+//   留下的是派发核心与文档契约这两个自包含模块）
+for (const rel of ['index.js', 'lib/dispatch.mjs', 'lib/doc-contract.mjs', 'README.md', 'LICENSE', '.gitignore']) {
   check(`存在 ${rel}`, existsSync(join(ROOT, rel)))
+}
+for (const rel of ['lib/state.mjs', 'panel/reader.js']) {
+  check(`已删除 ${rel}（工作流退役）`, !existsSync(join(ROOT, rel)))
 }
 
 // ⑦ 面板**自带**设计系统（web 上没有工作台外壳时它也得长得对）
