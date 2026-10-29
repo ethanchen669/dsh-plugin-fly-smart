@@ -28,35 +28,35 @@ description: Use when starting any task in this profile — establishes how to f
 
 多个技能都适用时，**流程技能在前** —— 它们定路子，实现类技能再去执行。
 
-- **「建个东西」**（加功能、做组件、改行为）→ 先 `smart-brainstorm`，再进工作流
-- **「修个 bug」/ 行为不对** → 先 `smart-debug`，再决定要不要开任务
+- **「建个东西」**（加功能、做组件、改行为）→ 先想清方案，再写计划（`smart-plan`）
+- **「修个 bug」/ 行为不对** → 先 `smart-debug`，修完用 `smart-verify-claim` 收尾
 - **要写多步计划** → `smart-plan`
 - **写任何生产代码之前** → `smart-tdd`
 - **即将声称完成 / 测试通过** → `smart-verify-claim`
+- **要审别人的代码或产物** → `smart-review`
 - **收到评审意见** → `smart-review-receive`
 - **开始特性工作** → `smart-worktree`
 - **2+ 个互不相干的任务** → `smart-parallel`
 - **创建/修改技能** → `smart-write-skill`
-- **某个 smart 会话出了问题**（卡住 / 门不开 / 重复派发 / 花太多）→ `smart-diagnose`
+- **模型路由 / 派发子代理出了问题**（用错模型、`smart_dispatch` 报错）→ `smart-diagnose`
 
-## 什么时候才开 smart 任务
+## 什么时候写计划 / 验收文件
 
-技能是**独立的**，多数日常事不需要开任务：
+技能是**独立的**，多数日常事**不写文件**：
 
 | 你在做的事 | 该走 |
 | --- | --- |
-| 排查一个 bug、定位一个失败 | `smart-debug`（**不开任务**） |
-| 写一小段代码 | `smart-tdd`（**不开任务**） |
-| 看看这个 diff / 这段改动 | `smart_begin({ shape: 'review' })` |
-| 修一处、要留证据 | `smart_begin({ shape: 'fix' })` |
-| 调查个问题、出个结论 | `smart_begin({ shape: 'investigation' })` |
-| 小改动 | `smart_begin({ size: 'light' })` |
-| 完整交付一个功能 | `smart_begin({ shape: 'feature', size: 'full' })` |
-| 写个技能 | `smart-write-skill`（**不开任务**） |
-| 会话出了问题、想查为什么 | `smart-diagnose`（**不开任务**） |
+| 排查一个 bug、定位一个失败 | `smart-debug`（不写文件） |
+| 写一小段代码 | `smart-tdd`（不写文件） |
+| 写个技能 | `smart-write-skill`（不写文件） |
+| 看看这个 diff / 这段改动 | `smart-review`（不写文件，出评审报告） |
+| 多步实现、别人（或另一个模型）要照着干 | `smart-plan` → 写 `docs/plans/<日期>-<名字>.md` |
+| 要交付、要人验收 | 再写 `<同名>-acceptance.md`，收尾用 `smart-verify-claim` |
+| 会话/路由出了问题 | `smart-diagnose`（不写文件） |
 
-**判断依据**：只有当这件事需要**别人的把关**（用户门 G1–G5）或**留档交付**时，才值得开任务。
-排查、写测试、验证声明 —— 这些用技能就够。
+**判断依据**：只有当这件事要**别人接手**（换会话、换模型、过几天回来）或**要人验收**时，
+才值得落成文件。落盘就用项目里普通的 `docs/plans/`，没有单独的产物目录、没有状态机。
+写完用 `smart_check_doc` 校验契约（`plan` 缺 Interfaces/Global Constraints/Review Focus 会逐条报出来）。
 
 ## 你正在找借口
 

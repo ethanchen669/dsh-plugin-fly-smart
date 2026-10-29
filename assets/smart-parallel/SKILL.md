@@ -187,4 +187,4 @@ Agent 3 → Fix tool-approval-race-conditions.test.ts
 ## 与 smart 工作流的关系
 
 多个**独立**故障排查并行跑，不要开多个 smart 任务 —— 任务是给『需要把关的交付』用的。
-若排查后确实要改码并交付，那才用 `smart_begin({ shape: 'fix' })`。
+若排查后确实要改码并交付，改完用 `smart-verify-claim` 收尾；多个互相独立的修复可以并行派给 `smart_dispatch`。

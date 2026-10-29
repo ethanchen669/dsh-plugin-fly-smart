@@ -330,4 +330,4 @@ Otherwise → not TDD
 
 ## 进阶
 
-需要把 TDD 落成多步计划时，用 `smart_begin({ size: 'light' })` 或 `smart-plan` 技能；单点修复可直接 `smart_begin({ shape: 'fix' })`。
+需要把 TDD 落成多步计划时，用 `smart-plan` 技能写 `docs/plans/` 下的计划；单点修复直接改，写完用 `smart-verify-claim` 对账。

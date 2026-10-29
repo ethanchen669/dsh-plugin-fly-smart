@@ -274,4 +274,4 @@ for (const [i, dot] of blocks.entries()) {
 
 ## 与 smart 工作流的关系
 
-写技能本身不需要开 smart 任务。若你要交付一个带测试、要人验收的技能包，那才用 `smart_begin({ size: 'light' })`。
+写技能本身不需要写计划。若你要交付一个带测试、要人验收的技能包，才写 `docs/plans/` 下的计划与验收文件。

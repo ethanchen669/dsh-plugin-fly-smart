@@ -183,4 +183,4 @@ DSH 工具面：跑命令用 `bash`，读产出用 `read`，改文件用 `write`
 
 ## 与 smart 工作流的关系
 
-smart 工作流的 `smart_verify` 是这套纪律的工具化：它取证并把证据落成文件。但这条纪律适用于**任何**会话 —— 不需要开 smart 任务。
+工作流退役后，这套纪律**没有任何工具替你做**：`smart_check_doc` 只校验文档契约，`smart_dispatch({ role: 'review' })` 只提供独立视角 —— 取证与对账仍然是你自己的活。

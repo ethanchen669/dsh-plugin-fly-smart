@@ -222,6 +222,23 @@ const noBranch = Object.entries(peers)
   .map(([name, range]) => `${name}=${range}`)
 check('peer 范围带显式预发布分支（|| 分支）', noBranch.length === 0, noBranch.join(', '))
 
+// ⑤b 技能不许引用已删的工作流工具（0.3.0）：技能指挥模型去调不存在的工具，
+//    失败形状是"模型照着技能做，第一步就 unknown tool"，而门禁全绿。
+{
+  // `/smart` 只在"不是 smart-xxx"时才算死引用：`/smart-routes.json` 与 `assets/smart-tdd/` 都是现役路径。
+  const DEAD = /\b(?:smart_(?:begin|artifact|gate|verify|execute|finish|consult|decide|ruling|brief|brief_confirm|rework|status))\b|\/smart(?![-_A-Za-z0-9])/u
+  const offenders = []
+  for (const entry of readdirSync(join(ROOT, 'assets'), { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue
+    const file = join(ROOT, 'assets', entry.name, 'SKILL.md')
+    if (!existsSync(file)) continue
+    readFileSync(file, 'utf8').split('\n').forEach((line, index) => {
+      if (DEAD.test(line)) offenders.push(`assets/${entry.name}/SKILL.md:${index + 1}: ${line.trim().slice(0, 80)}`)
+    })
+  }
+  check('技能里没有已删工作流工具的引用', offenders.length === 0, offenders.slice(0, 8).join(' | '))
+}
+
 // ⑥ 必须文件存在（0.3.0：lib/state.mjs 与 panel/reader.js 随工作流删除，
 //   留下的是派发核心与文档契约这两个自包含模块）
 for (const rel of ['index.js', 'lib/dispatch.mjs', 'lib/doc-contract.mjs', 'README.md', 'LICENSE', '.gitignore']) {

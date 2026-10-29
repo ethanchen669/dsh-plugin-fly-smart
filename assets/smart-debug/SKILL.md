@@ -316,4 +316,4 @@ echo "✅ No polluter found - all tests clean!"
 
 ## 进阶：需要完整交付时
 
-如果这个 bug 需要改代码并交付，用 `smart_begin({ shape: 'fix' })` 走 smart 工作流；只是排查定位则不必。
+如果这个 bug 需要改代码并交付，修完用 `smart-verify-claim` 做收尾自检（发现对账 + 四节报告）；只是排查定位则不必。
