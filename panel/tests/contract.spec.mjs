@@ -191,7 +191,7 @@ test('the host row claims the /fly/smart namespace and publishes its service', a
   assert.equal(skillProviders.length, 1)
   assert.equal(skillProviders[0].name, 'fly-smart')
   const skills = await skillProviders[0].list()
-  // smart-review 由 Task 7 新增；这里断的是一个不能少，新增后同步补进名单。
+  // 一个不能少：新增技能要同步补进这份名单（0.3.0 新增 smart-review）。
   const expected = ['smart-debug', 'smart-diagnose', 'smart-parallel', 'smart-plan', 'smart-review-receive', 'smart-skills', 'smart-tdd', 'smart-verify-claim', 'smart-worktree', 'smart-write-skill']
   assert.deepEqual(skills.map(entry => entry.name).sort(), expected)
   for (const entry of skills) {
