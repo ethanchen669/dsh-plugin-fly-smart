@@ -103,6 +103,19 @@ test('smart_dispatch role=review uses the review route', async () => {
   assert.deepEqual(out.route, { provider: 'p', model: 'r' })
 })
 
+test('smart_dispatch role=lite uses the lite route and reports it', async () => {
+  // smart_dispatch 每次现读 SCRATCH_MIRROR（工具面不收 mirrorPath），所以写那份。
+  writeFileSync(mirrorPath, JSON.stringify({ version: 2, default: { hand: 'p/h', lite: 'p/l' } }))
+  const tools = toolHarness({ subagents: activationStub([]) })
+  const out = JSON.parse(await tools.get('smart_dispatch').execute({ prompt: 'scan it', role: 'lite' }, execFor()))
+  assert.deepEqual(out.route, { provider: 'p', model: 'l' })
+  assert.equal(out.source, 'default')
+  // lite 不回落：没有 lite 层时大声报错，而不是静默用 hand（贵模型跑机械活）。
+  writeFileSync(mirrorPath, JSON.stringify({ version: 2, default: { hand: 'p/h' } }))
+  await assert.rejects(() => tools.get('smart_dispatch').execute({ prompt: 'scan it', role: 'lite' }, execFor()), /no lite model is configured/)
+  writeFileSync(mirrorPath, JSON.stringify({ version: 2, default: { hand: 'p/m', review: 'p/r' } }))
+})
+
 test('smart_dispatch refuses: empty prompt, missing service, and a child session', async () => {
   const tools = toolHarness({ subagents: activationStub([]) })
   await assert.rejects(() => tools.get('smart_dispatch').execute({ prompt: '  ' }, execFor()), /non-empty `prompt`/)

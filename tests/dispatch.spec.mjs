@@ -144,6 +144,23 @@ test('resolveRoute dispatches by role and refuses nothing on its own', () => {
   assert.match(err.message, /三个来源/)
 })
 
+test('the lite role: same ladder, but NO fallback to hand (cost decision stays a decision)', () => {
+  writeMirror({ version: 2, default: { hand: 'p/h', lite: 'p/l' }, sessions: { 'session-1': { lite: 'p/sl' } } })
+  assert.deepEqual(resolveRoute({ role: 'lite' }), { route: { provider: 'p', model: 'l' }, source: 'default' })
+  assert.deepEqual(resolveRoute({ role: 'lite', session: { id: 'session-1' } }), { route: { provider: 'p', model: 'sl' }, source: 'session' })
+
+  // 只有 hand、没有 lite ⇒ null（**不**回落到 hand：机械活跑贵模型是用户没做的成本决定）
+  writeMirror({ version: 2, default: { hand: 'p/h' } })
+  assert.equal(resolveRoute({ role: 'lite' }), null)
+  // review 的回落是语义豁免（评审可以复用 hand）；lite 的缺省是成本事故，两条规则故意不对称。
+  assert.equal(resolveRoute({ role: 'review' }).source, 'default-fallback')
+
+  cleanMirror()
+  const err = missingRouteError('lite', SCRATCH_MIRROR)
+  assert.match(err.message, /liteRoute/)
+  assert.match(err.message, /三个来源/)
+})
+
 /* ── 3. the lazy read ──────────────────────────────────────────────────────── */
 
 test('the route is re-read on every call — a later mirror write takes effect without a re-mount', () => {

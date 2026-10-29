@@ -182,7 +182,7 @@ git commit -m "feat: add specific feature"
 
 ## 与其它技能的关系
 
-上游：`smart-brainstorm`（方案）→ `smart-design`（形状）→ 本技能（步骤）；计划每个任务的 `**Interfaces:**` 逐字抄设计的「接口」节，不许另发明一套。
+上游：`smart-brainstorm`（方案）→ `smart-design`（形状）→ 本技能（步骤）；验收件由 `smart-acceptance` 先于实现写；计划每个任务的 `**Interfaces:**` 逐字抄设计的「接口」节，不许另发明一套。
 
 ## 与工具面的关系
 

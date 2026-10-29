@@ -20,9 +20,11 @@ import { test } from 'node:test'
 import {
   PLAN_CONTRACT,
   acceptanceContractGaps,
+  adrContractGaps,
   artifactSections,
   assertPlanContract,
   contractKindFor,
+  designContractGaps,
   documentContractError,
   openDecisions,
   planContractGaps,
@@ -132,6 +134,67 @@ test('acceptance gaps: no 验收 section, no criterion, missing 检查/预期, o
   assert.ok(acceptanceContractGaps(open).some(g => g.includes('unresolved decision section')))
 })
 
+test('design contract: five shape sections, and steps are refused', () => {
+  const good = `# x 设计
+
+## 组件与边界
+
+A 只知道 B 的接口。
+
+## 接口
+
+\`f(x: number) -> number\`
+
+## 数据与状态
+
+状态在内存，谁创建谁销毁。
+
+## 错误与失败模式
+
+失败抛 X，调用方区分"失败"与"空"。
+
+## 接缝与取舍
+
+改 C、不改 D；排除了缓存，理由见 ADR。
+`
+  assert.deepEqual(designContractGaps(good), [])
+
+  const withSteps = good + '\n### Step 1: 先做 A\n'
+  assert.ok(designContractGaps(withSteps).some(gap => gap.includes('no steps')), '设计里出现步骤要报')
+
+  const checklist = `${good}\n- [ ] **Step 1:** 先做 A\n`
+  assert.ok(designContractGaps(checklist).some(gap => gap.includes('no steps')))
+
+  const thin = '# x\n\n## 接口\n\nf()\n'
+  const gaps = designContractGaps(thin)
+  assert.ok(gaps.length >= 4, gaps.join('|'))
+})
+
+test('adr contract: five decision sections and the cost of being wrong', () => {
+  const good = `# ADR-001
+
+## Context
+
+## Options
+
+## Decision & Why
+
+选 A。**错了代价：**丢一次写入。
+
+## Consequences
+
+## Revisit trigger
+
+上游支持 X 时重开。
+`
+  assert.deepEqual(adrContractGaps(good), [])
+
+  const noCost = good.replace('**错了代价：**丢一次写入。', '')
+  assert.ok(adrContractGaps(noCost).some(gap => gap.includes('cost of being wrong')), '决定段不写"错了代价"要报')
+
+  assert.ok(adrContractGaps('# a\n\n## Context\n').length >= 4)
+})
+
 test('open decisions come from headings, not prose; fences do not create sections', () => {
   assert.deepEqual(openDecisions('正文提到需要你裁决但没有小节。').headings, [])
   const open = openDecisions('## 需要你裁决（G1）\n\n1. A 还是 B？\n2. C 还是 D？\n\n## 其他\n\n- 不是裁决\n')
@@ -142,8 +205,10 @@ test('open decisions come from headings, not prose; fences do not create section
   assert.deepEqual(artifactSections(fenced), ['真节'])
 })
 
-test('contractKindFor: explicit kind wins, otherwise the acceptance suffix decides', () => {
+test('contractKindFor: explicit kind wins, otherwise the filename suffix decides', () => {
   assert.equal(contractKindFor('docs/plans/x-acceptance.md'), 'acceptance')
+  assert.equal(contractKindFor('docs/plans/x-design.md'), 'design')
+  assert.equal(contractKindFor('docs/adr/adr-001.md'), 'adr')
   assert.equal(contractKindFor('docs/plans/x.md'), 'plan')
   assert.equal(contractKindFor('docs/plans/x-acceptance.md', 'plan'), 'plan')
   assert.equal(contractKindFor(undefined), 'plan')
@@ -151,6 +216,8 @@ test('contractKindFor: explicit kind wins, otherwise the acceptance suffix decid
 
 test('documentContractError names the right skill per kind', () => {
   assert.match(documentContractError('plan', ['x']).message, /smart-plan/)
-  assert.match(documentContractError('acceptance', ['x']).message, /smart-verify-claim/)
+  assert.match(documentContractError('acceptance', ['x']).message, /smart-acceptance/)
   assert.match(documentContractError('acceptance', ['x']).message, /acceptance\.md/)
+  assert.match(documentContractError('design', ['x']).message, /smart-design/)
+  assert.match(documentContractError('adr', ['x']).message, /smart-adr/)
 })

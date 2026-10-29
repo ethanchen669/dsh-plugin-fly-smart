@@ -171,6 +171,7 @@ export function readMirrorDocument(mirrorPath = resolveMirrorPath()) {
       sessions[id] = {
         hand: typeof value?.hand === 'string' ? value.hand.trim() : '',
         ...typeof value?.review === 'string' && value.review.trim() !== '' ? { review: value.review.trim() } : {},
+        ...typeof value?.lite === 'string' && value.lite.trim() !== '' ? { lite: value.lite.trim() } : {},
         at: typeof value?.at === 'string' ? value.at : null,
       }
     }
@@ -181,6 +182,8 @@ export function readMirrorDocument(mirrorPath = resolveMirrorPath()) {
     : typeof raw.hand === 'string' ? raw.hand.trim() : ''
   const defaultReview = typeof raw.default?.review === 'string' ? raw.default.review.trim() : ''
   const defaultReviewAt = typeof raw.default?.reviewAt === 'string' ? raw.default.reviewAt : null
+  const defaultLite = typeof raw.default?.lite === 'string' ? raw.default.lite.trim() : ''
+  const defaultLiteAt = typeof raw.default?.liteAt === 'string' ? raw.default.liteAt : null
   const defaultAt = typeof raw.default?.at === 'string'
     ? raw.default.at
     : typeof raw.at === 'string' ? raw.at : null
@@ -190,6 +193,8 @@ export function readMirrorDocument(mirrorPath = resolveMirrorPath()) {
     defaultHand,
     defaultReview,
     defaultReviewAt,
+    defaultLite,
+    defaultLiteAt,
     defaultAt,
     legacyBrain: typeof raw.brain === 'string' ? raw.brain.trim() : '',
   }
@@ -218,6 +223,16 @@ export function resolveReview(doc, sessionId) {
   if (doc.defaultReview !== '') return { review: doc.defaultReview, source: 'default', at: doc.defaultReviewAt }
   return { review: '', source: null, at: null }
 }
+
+/** Which lite route a given session resolves to (same ladder as the other two). */
+export function resolveLite(doc, sessionId) {
+  if (sessionId !== null && isValidSessionId(sessionId)) {
+    const row = doc.sessions[sessionId]
+    if (row !== undefined && row.lite !== '') return { lite: row.lite, source: 'session', at: row.at }
+  }
+  if (doc.defaultLite !== '') return { lite: doc.defaultLite, source: 'default', at: doc.defaultLiteAt }
+  return { lite: '', source: null, at: null }
+}
 /**
  * Compute the next mirror document for one route write, without touching disk.
  *
@@ -231,23 +246,30 @@ export function resolveReview(doc, sessionId) {
  * @returns `{ next, changed, at }` — `next` is null when the file should be removed.
  */
 export function planRouteWrite(doc, { role = 'hand', scope, sessionId = null, value = '', now = new Date().toISOString() }) {
-  const key = role === 'review' ? 'review' : 'hand'
-  const current = scope === 'session' ? (doc.sessions[sessionId]?.[key] ?? '') : key === 'review' ? doc.defaultReview : doc.defaultHand
-  if (current === value) return { next: null, changed: false, at: scope === 'session' ? (doc.sessions[sessionId]?.at ?? null) : key === 'review' ? doc.defaultReviewAt : doc.defaultAt }
+  const key = role === 'review' || role === 'lite' ? role : 'hand'
+  const defaultFor = k => (k === 'review' ? doc.defaultReview : k === 'lite' ? doc.defaultLite : doc.defaultHand)
+  const defaultAtFor = k => (k === 'review' ? doc.defaultReviewAt : k === 'lite' ? doc.defaultLiteAt : doc.defaultAt)
+  const current = scope === 'session' ? (doc.sessions[sessionId]?.[key] ?? '') : defaultFor(key)
+  if (current === value) return { next: null, changed: false, at: scope === 'session' ? (doc.sessions[sessionId]?.at ?? null) : defaultAtFor(key) }
   const sessions = {}
   for (const [id, row] of Object.entries(doc.sessions)) sessions[id] = { ...row }
   let defaultHand = doc.defaultHand ?? ''
   let defaultReview = doc.defaultReview ?? ''
+  let defaultLite = doc.defaultLite ?? ''
   let defaultAt = doc.defaultAt
   let defaultReviewAt = doc.defaultReviewAt
+  let defaultLiteAt = doc.defaultLiteAt
   if (scope === 'session') {
     if (value === '') {
       if (sessions[sessionId] !== undefined) delete sessions[sessionId][key]
-      if (sessions[sessionId] !== undefined && sessions[sessionId].hand === undefined && sessions[sessionId].review === undefined) delete sessions[sessionId]
+      if (sessions[sessionId] !== undefined && sessions[sessionId].hand === undefined && sessions[sessionId].review === undefined && sessions[sessionId].lite === undefined) delete sessions[sessionId]
     } else sessions[sessionId] = { ...(sessions[sessionId] ?? {}), [key]: value, at: now }
   } else if (key === 'review') {
     defaultReview = value
     defaultReviewAt = value === '' ? null : now
+  } else if (key === 'lite') {
+    defaultLite = value
+    defaultLiteAt = value === '' ? null : now
   } else {
     defaultHand = value
     defaultAt = value === '' ? null : now
@@ -255,9 +277,10 @@ export function planRouteWrite(doc, { role = 'hand', scope, sessionId = null, va
   const next = { version: MIRROR_VERSION }
   if (defaultHand !== '') { next.default = { hand: defaultHand, at: defaultAt ?? now }; next.hand = defaultHand }
   if (typeof defaultReview === 'string' && defaultReview !== '') next.default = { ...(next.default ?? {}), review: defaultReview, at: defaultReviewAt ?? now }
+  if (typeof defaultLite === 'string' && defaultLite !== '') next.default = { ...(next.default ?? {}), lite: defaultLite, at: defaultLiteAt ?? now }
   if (Object.keys(sessions).length > 0) next.sessions = sessions
   for (const [keyName, val] of Object.entries(doc.raw)) if (!['version', 'default', 'sessions', 'hand', 'at'].includes(keyName)) next[keyName] = val
-  return { next: next.default === undefined && next.sessions === undefined ? null : next, changed: true, at: scope === 'session' ? now : key === 'review' ? defaultReviewAt : defaultAt }
+  return { next: next.default === undefined && next.sessions === undefined ? null : next, changed: true, at: scope === 'session' ? now : key === 'review' ? defaultReviewAt : key === 'lite' ? defaultLiteAt : defaultAt }
 }
 
 export const planHandWrite = (doc, input) => planRouteWrite(doc, { ...input, role: 'hand', value: input.hand ?? '' })
@@ -363,7 +386,7 @@ export function updateMirror(mirrorPath, input) {
   const lockPath = mirrorLockPath(mirrorPath)
   return withMirrorLock(lockPath, () => {
     const doc = readMirrorDocument(mirrorPath)
-    const planned = planRouteWrite(doc, { ...input, value: input.role === 'review' ? input.review : input.hand })
+    const planned = planRouteWrite(doc, { ...input, value: input.role === 'review' || input.role === 'lite' ? input[input.role] : input.hand })
     if (!planned.changed) return { changed: false, at: planned.at, path: mirrorPath, doc }
     if (planned.next === null) {
       rmSync(mirrorPath, { force: true })

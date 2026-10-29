@@ -32,6 +32,7 @@ description: Use when starting any task in this profile — establishes how to f
 - **「修个 bug」/ 行为不对** → 先 `smart-debug`，修完用 `smart-verify-claim` 收尾
 - **要写多步计划** → `smart-plan`
 - **写任何生产代码之前** → `smart-tdd`
+- **要定义「怎么算过」** → `smart-acceptance`（fixture / gate / probe，先于实现写）
 - **即将声称完成 / 测试通过** → `smart-verify-claim`
 - **要审别人的代码或产物** → `smart-review`（阻塞 / 非阻塞 / 需要裁决三档，每条带复现）
 - **收到评审意见** → `smart-review-receive`
@@ -54,7 +55,7 @@ description: Use when starting any task in this profile — establishes how to f
 | 方案定了、要展开成实现形状 | `smart-design`（组件/接口/数据/错误五问） |
 | 设计取舍要长期留档 | `smart-adr`（ADR-lite 五段，写进 docs/adr/ 或计划的约束节） |
 | 多步实现、别人（或另一个模型）要照着干 | `smart-plan` → 写 `docs/plans/<日期>-<名字>.md` |
-| 要交付、要人验收 | 再写 `<同名>-acceptance.md`，收尾用 `smart-verify-claim` |
+| 要交付、要人验收 | 先 `smart-acceptance` 写 `<同名>-acceptance.md`（fixture/gate/probe），收尾用 `smart-verify-claim` |
 | 会话/路由出了问题 | `smart-diagnose`（不写文件） |
 
 **判断依据**：只有当这件事要**别人接手**（换会话、换模型、过几天回来）或**要人验收**时，

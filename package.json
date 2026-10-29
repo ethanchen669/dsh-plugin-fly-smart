@@ -1,7 +1,7 @@
 {
   "name": "@dsh-fly/dsh-plugin-fly-smart",
   "version": "0.3.0",
-  "description": "Fly smart：模型路由面板（hand / review）+ smart_dispatch / smart_check_doc 两个工具 + 14 个独立技能。0.3.0 删除了三模型工作流（阶段机 / 用户门 / 任务树面板）。",
+  "description": "Fly smart：模型路由面板（hand / review）+ smart_dispatch / smart_check_doc 两个工具 + 15 个独立技能。0.3.0 删除了三模型工作流（阶段机 / 用户门 / 任务树面板）。",
   "type": "module",
   "main": "index.js",
   "exports": {

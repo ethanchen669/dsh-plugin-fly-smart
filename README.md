@@ -1,6 +1,6 @@
 # @dsh-fly/dsh-plugin-fly-smart
 
-**模型路由 + 14 个技能** —— DeepSeek Harness 插件。
+**模型路由 + 15 个技能** —— DeepSeek Harness 插件。
 
 方法论移植自 [obra/superpowers](https://github.com/obra/superpowers)（MIT）。
 插件的活是两件事：让**子代理跑在你指定的模型上**，以及让**工作纪律在需要时才出现**。
@@ -25,7 +25,7 @@
 
 ---
 
-## 14 个技能：不用开任务也能用
+## 15 个技能：不用开任务也能用
 
 技能按你说话的场景自动命中。**多数日常事到这里就够了。**
 
@@ -34,6 +34,7 @@
 | 「这个方案选哪个」 | `smart-brainstorm` —— 先摆决策表（问题 / 候选 / 倾向 / 未决），再选 |
 | 「方案定了，怎么设计」 | `smart-design` —— 五问定形状：组件 / 接口 / 数据 / 错误 / 接缝 |
 | 「这个设计为什么这么定」 | `smart-adr` —— ADR-lite 五段：上下文 / 候选 / 决定与代价 / 后果 / 重开条件 |
+| 「怎么算过」 | `smart-acceptance` —— fixture / gate / probe，先于实现写验收件 |
 | 「帮我看看这个 diff」 | `smart-review` —— 判词前先有证据，阻塞 / 非阻塞 / 需要裁决三档 |
 | 「这个测试挂了」 | `smart-debug` —— 先找根因，症状修复不算修 |
 | 「给它加个函数」 | `smart-tdd` —— 先写失败的测试，看着它失败 |
@@ -55,6 +56,7 @@
 ```
 hand:    <provider>/<model>[@effort]   # 执行类派发（默认）
 review:  <provider>/<model>[@effort]   # 独立评审
+lite:    <provider>/<model>[@effort]   # 机械活的便宜模型（探索 / 取证 / 并行调查）
 ```
 
 三层 + 一个硬底（`lib/dispatch.mjs`）：
@@ -71,6 +73,8 @@ preset（行配置 handRoute / reviewRoute，压过面板）
 - **评审会回落，但回落实话实说**：没配 review 时 `role: 'review'` 复用 hand，
   回执 `source` 是 `*-fallback` —— 那意味着执行者在审自己，**要告诉用户**。
 - **每次调用现读**：面板保存后下一次派发生效，不需要重启。
+- **lite 不回落**：没配 lite 时 `role: 'lite'` 大声报错，不静默用贵模型跑机械活
+  （review 回落 hand 是语义豁免，lite 回落是成本事故 —— 两条规则故意不对称）。
 
 ---
 

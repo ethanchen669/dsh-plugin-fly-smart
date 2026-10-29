@@ -53,6 +53,7 @@ const BASE = '/fly/smart'
 interface RouteLayer {
   hand: string
   review?: string
+  lite?: string
   at: string | null
 }
 
@@ -79,6 +80,7 @@ interface RouteConfig {
   brain: { value: string; consumer: null } | null
   effective: { hand: string; source: RouteSource } | null
   effectiveReview?: { review: string; source: RouteSource } | null
+  effectiveLite?: { lite: string; source: RouteSource } | null
   effectiveFromPanel: boolean
 }
 
@@ -208,6 +210,18 @@ function reviewEffectiveLabel(config: RouteConfig | null): string {
   return `${value} · ${source === null ? '未知来源' : SOURCE_LABEL[source]}`
 }
 
+/**
+ * The lite row's sentence. **No fallback** by design: mechanical work silently
+ * running on the expensive model is a cost decision the user did not make, so an
+ * unconfigured lite route says so instead of borrowing hand.
+ */
+function liteEffectiveLabel(config: RouteConfig | null): string {
+  const value = config?.effectiveLite?.lite ?? ''
+  const source = config?.effectiveLite?.source ?? null
+  if (value === '') return '（未配置 —— 派发 role:lite 会大声报错，不静默用贵模型）'
+  return `${value} · ${source === null ? '未知来源' : SOURCE_LABEL[source]}`
+}
+
 /** One `<option>` of the model ladder, as `provider/model[@effort]`. */
 interface LadderOption {
   value: string
@@ -264,7 +278,8 @@ function RouteCard({ config, sessionId, onSaved }: { config: RouteConfig | null;
   const [options, setOptions] = useState<LadderOption[]>([])
   const inputRef = useRef<HTMLInputElement | null>(null)
   const reviewInputRef = useRef<HTMLInputElement | null>(null)
-  const roleRef = useRef<'hand' | 'review'>('hand')
+  const liteInputRef = useRef<HTMLInputElement | null>(null)
+  const roleRef = useRef<'hand' | 'review' | 'lite'>('hand')
 
   /**
    * "There is unsaved typing in the box", held in a **ref** rather than state.
@@ -291,6 +306,7 @@ function RouteCard({ config, sessionId, onSaved }: { config: RouteConfig | null;
     if (typed.current) return
     if (inputRef.current !== null) inputRef.current.value = next
     if (reviewInputRef.current !== null) reviewInputRef.current.value = config?.session?.review ?? config?.default?.review ?? ''
+    if (liteInputRef.current !== null) liteInputRef.current.value = config?.session?.lite ?? config?.default?.lite ?? ''
     setDraft(next)
   }, [config])
 
@@ -345,7 +361,7 @@ function RouteCard({ config, sessionId, onSaved }: { config: RouteConfig | null;
    *
    * @returns the live input element, or null before mount.
    */
-  const activeBox = () => (roleRef.current === 'review' ? reviewInputRef.current : inputRef.current)
+  const activeBox = () => (roleRef.current === 'review' ? reviewInputRef.current : roleRef.current === 'lite' ? liteInputRef.current : inputRef.current)
 
   /**
    * The value to save: **the box, read live**.
@@ -397,7 +413,7 @@ function RouteCard({ config, sessionId, onSaved }: { config: RouteConfig | null;
     <article className="fly-card" data-probe="route-config">
       <h2>三模型路由</h2>
       <p className="fly-sub" data-probe="route-path">
-        {`配置面 ${config?.path ?? '…'}（hand / review 可写；brain 只读）`}
+        {`配置面 ${config?.path ?? '…'}（hand / review / lite 可写；brain 只读）`}
       </p>
       <dl className="fly-kv">
         <dt>brain（只读）</dt>
@@ -408,10 +424,14 @@ function RouteCard({ config, sessionId, onSaved }: { config: RouteConfig | null;
         </dd>
         <dt>review 当前生效</dt>
         <dd data-probe="effective-review-route">{reviewEffectiveLabel(config)}</dd>
+        <dt>lite 当前生效</dt>
+        <dd data-probe="effective-lite-route">{liteEffectiveLabel(config)}</dd>
         <dt>本会话 hand</dt>
         <dd data-probe="session-route">{config?.session?.hand === undefined || config.session.hand === '' ? '（未单独设置）' : config.session.hand}</dd>
         <dt>本会话 review</dt>
         <dd data-probe="session-review-route">{config?.session?.review === undefined || config.session.review === '' ? '（未单独设置）' : config.session.review}</dd>
+        <dt>本会话 lite</dt>
+        <dd data-probe="session-lite-route">{config?.session?.lite === undefined || config.session.lite === '' ? '（未单独设置）' : config.session.lite}</dd>
         <dt>所有会话默认 hand</dt>
         <dd data-probe="default-route">{config?.default?.hand === undefined || config.default.hand === '' ? '（未设置）' : config.default.hand}</dd>
         <dt>所有会话默认 review</dt>
@@ -446,7 +466,21 @@ function RouteCard({ config, sessionId, onSaved }: { config: RouteConfig | null;
         />
       </label>
 
-       {ladder === 'ready'
+       <label className="fly-field">
+        <span>lite 模型（机械活的便宜模型，provider/model，可选 @effort）</span>
+        <input
+          type="text"
+          data-fly-smart-field="lite"
+          ref={liteInputRef}
+          defaultValue={config?.session?.lite ?? config?.default?.lite ?? ''}
+          placeholder="deepseek/deepseek-flash"
+          spellCheck={false}
+          onFocus={() => { roleRef.current = 'lite' }}
+          onChange={event => { roleRef.current = 'lite'; typed.current = true; setDraft(event.target.value) }}
+        />
+      </label>
+
+      {ladder === 'ready'
         ? (
             <label className="fly-field">
               <span>从模型目录选择（写入你正在编辑的那个输入框）</span>
@@ -506,7 +540,7 @@ function RouteCard({ config, sessionId, onSaved }: { config: RouteConfig | null;
       </div>
 
       <p className="fly-note" data-probe="route-target">
-        {'上面三个动作作用于你最后碰过的那个输入框（hand 或 review）—— 点一下要改的那条，再按保存。'}
+        {'上面三个动作作用于你最后碰过的那个输入框（hand / review / lite）—— 点一下要改的那条，再按保存。'}
       </p>
 
       {presetEffective

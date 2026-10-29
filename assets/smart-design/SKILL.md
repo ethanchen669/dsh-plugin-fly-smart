@@ -65,4 +65,4 @@ NO STEPS IN A DESIGN DOCUMENT
 
 - **上游**：`smart-brainstorm` 拍板方案；方案没定就回去定。
 - **平级**：`smart-adr` 记决定的理由（含错了代价 / 重开条件）；设计里"排除了什么"指向它。
-- **下游**：`smart-plan` 按设计拆任务（Interfaces 逐字抄设计的接口节）；`smart-review` 把设计当对象审（五问就是评审清单）。
+- **下游**：`smart-plan` 按设计拆任务（Interfaces 逐字抄设计的接口节）；`smart-acceptance` 把「错误与失败模式」逐条变成会红的验收件；`smart-review` 把设计当对象审（五问就是评审清单）。

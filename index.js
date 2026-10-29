@@ -62,6 +62,7 @@ import {
   resolveHand,
   resolveReview,
   resolveMirrorPath,
+  resolveLite,
   updateMirror,
 } from './panel/routes.mjs'
 
@@ -92,6 +93,9 @@ export const Config = z.object({
   brainRoute: z.string().default('').volatile(),
   handRoute: z.string().default('').volatile(),
   reviewRoute: z.string().default('').volatile(),
+  // 机械活的便宜模型（探索 / 取证 / 并行调查）。不配就等于没有 lite 角色 —— 调用方会
+  // 大声报错而不是静默用贵模型跑机械活。
+  liteRoute: z.string().default('').volatile(),
 })
 
 /**
@@ -147,7 +151,7 @@ export class RouteWriteError extends Error {
  * @param input - `{ mirrorPath, rowHand, rowReview, sessionId }`.
  * @returns the payload served at `/fly/smart/routes` and as `routeConfig`.
  */
-export function readRoutesConfig({ mirrorPath, rowHand = '', rowReview = '', sessionId = null }) {
+export function readRoutesConfig({ mirrorPath, rowHand = '', rowReview = '', rowLite = '', sessionId = null }) {
   if (rowHand !== '') {
     try { mergeRowRoutes(mirrorPath, { hand: rowHand }) } catch { /* read remains useful */ }
   }
@@ -158,15 +162,18 @@ export function readRoutesConfig({ mirrorPath, rowHand = '', rowReview = '', ses
     : null
   const mirror = resolveHand(doc, known ? sessionId : null)
   const review = resolveReview(doc, known ? sessionId : null)
+  const lite = resolveLite(doc, known ? sessionId : null)
   const effective = rowHand !== '' ? { hand: rowHand, source: 'preset' } : { hand: mirror.hand, source: mirror.source }
   const effectiveReview = rowReview !== '' ? { review: rowReview, source: 'preset' } : review
+  const effectiveLite = rowLite !== '' ? { lite: rowLite, source: 'preset' } : lite
   return {
     path: mirrorPath, lock: mirrorLockPath(mirrorPath), version: MIRROR_VERSION, exists: existsSync(mirrorPath),
-    presetRow: { hand: rowHand, review: rowReview, at: null, effective: rowHand !== '' || rowReview !== '' },
-    default: doc.defaultHand === '' && doc.defaultReview === '' ? null : { hand: doc.defaultHand, review: doc.defaultReview, at: doc.defaultAt },
-    session, sessionKnown: known, sessionCount: Object.keys(doc.sessions).length,
+    presetRow: { hand: rowHand, review: rowReview, lite: rowLite, at: null, effective: rowHand !== '' || rowReview !== '' || rowLite !== '' },
+    default: doc.defaultHand === '' && doc.defaultReview === '' && doc.defaultLite === '' ? null : { hand: doc.defaultHand, review: doc.defaultReview, lite: doc.defaultLite, at: doc.defaultAt },
+    session,
+    sessionKnown: known, sessionCount: Object.keys(doc.sessions).length,
     brain: doc.legacyBrain === '' ? null : { value: doc.legacyBrain, consumer: null },
-    effective, effectiveReview, effectiveFromPanel: rowHand === '' && rowReview === '',
+    effective, effectiveReview, effectiveLite, effectiveFromPanel: rowHand === '' && rowReview === '' && rowLite === '',
   }
 }
 
@@ -177,7 +184,7 @@ export function readRoutesConfig({ mirrorPath, rowHand = '', rowReview = '', ses
  * @returns the fixed success payload `{ changed, effectiveFromPanel, source, sessionKnown, at, path }`.
  * @throws {RouteWriteError} for the 400-class refusals.
  */
-export function writeRoutesConfig({ mirrorPath, rowHand = '', rowReview = '', value, hand = '', role = 'hand', scope, sessionId = null }) {
+export function writeRoutesConfig({ mirrorPath, rowHand = '', rowReview = '', rowLite = '', value, hand = '', role = 'hand', scope, sessionId = null }) {
   value = value ?? hand ?? ''
   const doc = readMirrorDocument(mirrorPath)
   if (scope === 'session' && value !== '' && doc.sessions[sessionId] === undefined && Object.keys(doc.sessions).length >= MAX_SESSIONS) {
@@ -185,16 +192,16 @@ export function writeRoutesConfig({ mirrorPath, rowHand = '', rowReview = '', va
   }
   let result
   try {
-    result = updateMirror(mirrorPath, role === 'review' ? { role, review: value, scope, sessionId } : { role, hand: value, scope, sessionId })
+    result = updateMirror(mirrorPath, role === 'review' || role === 'lite' ? { role, [role]: value, scope, sessionId } : { role, hand: value, scope, sessionId })
   } catch (error) {
     if (error instanceof LockBusy) throw new RouteWriteError(409, error.message)
     throw new RouteWriteError(500, `smart routes: 镜像写入失败：${String(error?.message ?? error)}`)
   }
-  const config = readRoutesConfig({ mirrorPath, rowHand, rowReview, sessionId })
+  const config = readRoutesConfig({ mirrorPath, rowHand, rowReview, rowLite, sessionId })
   return {
     changed: result.changed,
-    effectiveFromPanel: rowHand === '' && rowReview === '',
-    source: role === 'review' ? config.effectiveReview.source : config.effective.source,
+    effectiveFromPanel: rowHand === '' && rowReview === '' && rowLite === '',
+    source: role === 'review' ? config.effectiveReview.source : role === 'lite' ? config.effectiveLite.source : config.effective.source,
     sessionKnown: config.sessionKnown,
     at: result.at,
     path: result.path,
@@ -375,8 +382,8 @@ export async function answerSmartRequest(deps, req, res) {
       return
     }
     for (const key of Object.keys(payload)) {
-      if (!['hand', 'review', 'role', 'scope', 'sessionId'].includes(key)) {
-        json(400, { error: `smart routes: 未知字段 ${JSON.stringify(key)}（只认 hand / review / role / scope / sessionId）` })
+      if (!['hand', 'review', 'lite', 'role', 'scope', 'sessionId'].includes(key)) {
+        json(400, { error: `smart routes: 未知字段 ${JSON.stringify(key)}（只认 hand / review / lite / role / scope / sessionId）` })
         return
       }
     }
@@ -489,6 +496,7 @@ export function apply(ctx, rawConfig = {}) {
   const mirrorPath = resolveMirrorPath(env)
   const rowHand = readRowString(rawConfig?.handRoute)
   const rowReview = readRowString(rawConfig?.reviewRoute)
+  const rowLite = readRowString(rawConfig?.liteRoute)
 
   // 行 ref 非空 = 脚本化硬底：启动时并进 default 层（永不删键）。行 ref 为空时
   // **一个字节都不写** —— 真实的 ~/.dsh-fly/smart-routes.json 是用户的配置，不是我们的草稿纸。
@@ -506,13 +514,13 @@ export function apply(ctx, rawConfig = {}) {
     mirrorPath,
     activatedAt: new Date().toISOString(),
     endpoints: ENDPOINTS.map(endpoint => ({ ...endpoint })),
-    routes: sessionId => readRoutesConfig({ mirrorPath, rowHand, rowReview, sessionId }),
+    routes: sessionId => readRoutesConfig({ mirrorPath, rowHand, rowReview, rowLite, sessionId }),
   })
   ctx.provide(FLY_SMART_SERVICE, service)
 
   const deps = {
-    readRoutes: sessionId => readRoutesConfig({ mirrorPath, rowHand, rowReview, sessionId }),
-    writeRoutes: ({ role = 'hand', value = '', hand = value, scope, sessionId }) => writeRoutesConfig({ mirrorPath, rowHand, rowReview, role, value, hand, scope, sessionId }),
+    readRoutes: sessionId => readRoutesConfig({ mirrorPath, rowHand, rowReview, rowLite, sessionId }),
+    writeRoutes: ({ role = 'hand', value = '', hand = value, scope, sessionId }) => writeRoutesConfig({ mirrorPath, rowHand, rowReview, rowLite, role, value, hand, scope, sessionId }),
     log: () => {
       try {
         return ctx.get?.('log')

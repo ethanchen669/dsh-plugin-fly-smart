@@ -30,7 +30,9 @@ import {
 } from '../lib/dispatch.mjs'
 import {
   acceptanceContractGaps,
+  adrContractGaps,
   contractKindFor,
+  designContractGaps,
   planContractGaps,
 } from '../lib/doc-contract.mjs'
 
@@ -87,17 +89,17 @@ export function apply(ctx, rawConfig = {}) {
 
   ctx.tools.register(defineTool({
     name: 'smart_dispatch',
-    description: 'Run a subagent on a model route configured in the Fly smart panel (or the row config): `role: "hand"` for implementation work, `role: "review"` for an independent audit of work already done. Use it whenever the task should be executed or reviewed by a model other than the session\'s own — the route is re-read on every call, so a model saved in the panel takes effect immediately. The reply carries the child\'s text plus the route and its source (a review route with no review model configured falls back to hand, and `source` says `<x>-fallback` so you can tell the user instead of silently reviewing with the executor\'s model).',
+    description: 'Run a subagent on a model route configured in the Fly smart panel (or the row config): `role: "hand"` for implementation work, `role: "review"` for an independent audit of work already done, `role: "lite"` for mechanical work on the cheap model. Use it whenever the task should be executed or reviewed by a model other than the session\'s own — the route is re-read on every call, so a model saved in the panel takes effect immediately. The reply carries the child\'s text plus the route and its source (a review route with no review model configured falls back to hand, and `source` says `<x>-fallback` so you can tell the user instead of silently reviewing with the executor\'s model).',
     parameters: {
       prompt: { type: 'string', description: 'The complete, self-contained instruction for the child. It does not see this conversation: include the goal, the files, and what "done" looks like.' },
-      role: { type: 'string', description: 'Which configured route to run on: "hand" (default) or "review".' },
+      role: { type: 'string', description: 'Which configured route to run on: "hand" (default, implementation work), "review" (independent audit — never the executor\'s own model when a review route is configured), or "lite" (cheap model for mechanical work: exploration, evidence gathering, parallel investigation; no fallback — configure it or use hand).' },
       label: { type: 'string', description: 'Short label for the run, shown in logs (default "smart_dispatch").' },
     },
     output: textOutput,
     async execute(args, exec) {
       assertNotChild(exec)
       exec.signal?.throwIfAborted?.()
-      const role = args.role === 'review' ? 'review' : 'hand'
+      const role = args.role === 'review' || args.role === 'lite' ? args.role : 'hand'
       const prompt = typeof args.prompt === 'string' ? args.prompt.trim() : ''
       if (prompt === '') throw new Error('smart: smart_dispatch needs a non-empty `prompt` — the child does not see this conversation')
       const subagents = ctx.get('subagents')
@@ -119,10 +121,10 @@ export function apply(ctx, rawConfig = {}) {
 
   ctx.tools.register(defineTool({
     name: 'smart_check_doc',
-    description: 'Check a plan or acceptance document against the document contract: a plan needs an "**Interfaces:**" block (Consumes / Produces) in EVERY task, a "## Global Constraints" section and a "## Review Focus" section; an acceptance document needs a "## …验收…" section, at least one "- [ ]" criterion, and every criterion must carry both 「检查」 (what to run) and 「预期」 (what passing looks like), with no 「需要你裁决」 section left open. Run it after writing the file and fix every reported gap before handing the plan to anyone. The kind is inferred from a `-acceptance.md` suffix unless `kind` is given.',
+    description: 'Check a plan, acceptance, design or ADR document against its document contract: a plan needs an "**Interfaces:**" block (Consumes / Produces) in EVERY task, a "## Global Constraints" section and a "## Review Focus" section; an acceptance document needs a "## …验收…" section, at least one "- [ ]" criterion, and every criterion must carry both 「检查」 (what to run) and 「预期」 (what passing looks like), with no 「需要你裁决」 section left open; a design needs the five shape sections (组件/接口/数据/错误/接缝) and no steps; an ADR needs the five decision sections and the cost of being wrong. Run it after writing the file and fix every reported gap before handing the plan to anyone. The kind is inferred from a `-acceptance.md` suffix unless `kind` is given.',
     parameters: {
       path: { type: 'string', description: 'Absolute path of the markdown file to check.' },
-      kind: { type: 'string', description: 'Optional "plan" or "acceptance"; omitted = inferred from the filename.' },
+      kind: { type: 'string', description: 'Optional "plan", "acceptance", "design" or "adr"; omitted = inferred from the filename (-acceptance.md / -design.md / -adr.md suffixes).' },
     },
     output: textOutput,
     async execute(args, exec) {
@@ -136,7 +138,7 @@ export function apply(ctx, rawConfig = {}) {
       if (!existsSync(path)) throw new Error(`smart: no such file: ${path}`)
       const text = readFileSync(path, 'utf8')
       const kind = contractKindFor(path, args.kind)
-      const gaps = kind === 'acceptance' ? acceptanceContractGaps(text) : planContractGaps(text)
+      const gaps = kind === 'acceptance' ? acceptanceContractGaps(text) : kind === 'design' ? designContractGaps(text) : kind === 'adr' ? adrContractGaps(text) : planContractGaps(text)
       return JSON.stringify({ ok: gaps.length === 0, kind, path, gaps }, null, 2)
     },
   }))
