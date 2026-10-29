@@ -161,7 +161,12 @@
 - [ ] **Step 3: 跑钉子 + 走查** —— `node scripts/verify-smart.mjs` 绿；逐技能通读派发段，确认指挥的工具都存在（这一步是人工走查，结论写进提交信息）。
 - [ ] **Step 4: 提交** —— `docs(skills): 引用清洗与产物约定（docs/plans 两份制），技能面与 0.3.0 工具面对齐`
 
-### Task 7: 新技能 `smart-review`（执行评审）
+### Task 7: 新技能 `smart-review`（执行评审）—— **结论：未交付（RED 未复现失败）**
+
+> 执行结果如实记录：按 `smart-write-skill` 铁律先跑无技能基线。干净夹具（真实可 apply 的
+> diff + 埋 4 类缺陷 + 计划缺契约）上，基线**全部抓出**并自发做了复现、分层终态与「已核对」。
+> 对照组不复现失败 ⇒ 不写这段指导，技能已删除（提交 `17cba9f`）。教训：首轮夹具的 corrupt
+> patch 自带警报、第二轮的草稿技能文件污染了基线，两轮都作废后重跑。）
 
 **Files:**
 - Create: `assets/smart-review/SKILL.md`

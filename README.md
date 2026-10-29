@@ -1,28 +1,27 @@
 # @dsh-fly/dsh-plugin-fly-smart
 
-**带用户门禁的三模型工作流** —— DeepSeek Harness 插件。
+**模型路由 + 11 个技能** —— DeepSeek Harness 插件。
 
-方法论移植自 [obra/superpowers](https://github.com/obra/superpowers)（MIT）：
-脑设计、评审把关、手执行，**每一道门你来开**。外加 10 个可独立触发的技能 ——
-多数日常事不必走工作流。
+方法论移植自 [obra/superpowers](https://github.com/obra/superpowers)（MIT）。
+插件的活是两件事：让**子代理跑在你指定的模型上**，以及让**工作纪律在需要时才出现**。
 
-> **装了能得到什么**：说「修个 bug」就按根因排查走；说「做这个功能」就进带门禁的工作流；
-> 每一份产物你都看得见、批得了、退得回。
+> **0.3.0 是瘦身版**：0.2.x 的三模型工作流（阶段机、G1–G5 用户门、14 个 `smart_*` 工具、
+> 任务树面板）已删除 —— 它太重、用得也少。留下的三样是每天在用的：**模型路由面板**、
+> **按路由派发子代理**、**技能**。计划与验收改回普通 markdown，落在项目自己的 `docs/plans/` 下。
+> 存量数据（`~/.dsh-fly/smart/`、各工作区 `docs/smart/`）一个字节没动，仍可当普通文件读。
 
 ---
 
 ## 它解决什么
 
-让模型干活时**少自作主张、多留痕迹**：
-
 | 常见问题 | 这里怎么处理 |
 | --- | --- |
-| 模型「我觉得你要的是这个」 | 脑暴先摆**决策表**给你挑方案，选完才进设计 |
-| 计划写了等于没写 | `plan.md` 有**内容契约**：每个任务声明它的接口、全局约束、风险面 |
-| 评审形同虚设 | 评审走**独立路由**，且**不许回落**到执行者那条 —— 不能自己审自己 |
-| 改完了不知道改了啥 | 执行者落**评审包**（commit 列表 + diff），裁决对着 diff 判 |
-| 模型替你做了决定没人知道 | 逐条记「决定 — 为什么 — 错了代价」，收尾总结必须提 |
-| 小事被 6 个阶段碾过去 | `shape` / `size` 决定走几步、每步花多少 |
+| 所有活都用会话模型干，贵模型被当苦力 | `smart_dispatch({ role: 'hand' })` 按面板配的路由派子代理 |
+| 「评审」变成自己夸自己 | `role: 'review'` 走评审路由；没有 review 模型时如实回报 `source: *-fallback` |
+| 面板改了模型，工具还在用旧的 | 路由**每次调用现读**，保存后下一次派发生效 |
+| 计划写了等于没写 | `smart_check_doc` 逐条校验文档契约（Interfaces / 约束 / 风险面 / 验收标准） |
+| 模型替你做了决定没人知道 | `smart-verify-claim` 的「发现对账」：每条发现必须有终态 |
+| 小事被流程碾过去 | 技能是**按需触发**的，不写文件、不开任务也能用 |
 
 ---
 
@@ -34,65 +33,76 @@
 | --- | --- |
 | 「这个测试挂了」 | `smart-debug` —— 先找根因，症状修复不算修 |
 | 「给它加个函数」 | `smart-tdd` —— 先写失败的测试，看着它失败 |
-| 「我改完了，能提交吗」 | `smart-verify-claim` —— 证据先于断言 |
+| 「我改完了，能提交吗」 | `smart-verify-claim` —— 证据先于断言 + 发现对账 |
 | 「评审说这里要改」 | `smart-review-receive` —— 先核实再改，不许表演式同意 |
-| 「这是 spec，写个计划」 | `smart-plan` —— 给没见过代码库的工程师写 |
+| 「这是 spec，写个计划」 | `smart-plan` —— 给没见过代码库的工程师写，落 `docs/plans/` |
 | 「开个分支做这个」 | `smart-worktree` —— 先隔离，绝不在 main 上开工 |
 | 「这 3 个测试都挂了」 | `smart-parallel` —— 各派一个并行查 |
 | 「我要写个技能」 | `smart-write-skill` —— 写技能就是把 TDD 用在文档上 |
-| 「这个任务卡住了」 | `smart-diagnose` —— 症状→假设→验证，每条结论带出处 |
+| 「模型没按我配的跑」 | `smart-diagnose` —— 路由与派发的症状→假设→验证 |
 | 「我要开始做个东西」 | `smart-skills` —— 先查再动 |
-
----
-
-## 需要把关时：开任务
-
-```js
-smart_begin({ title, shape, size })
-```
-
-| `shape` | 走什么 | 适合 |
-| --- | --- | --- |
-| `feature` | 设计 → 计划 → 执行 → 验收（G1–G5） | 完整交付一个功能 |
-| `fix` | 脑暴 → 计划 → 执行 → 验收（G1、G3、G5） | 修一处、要留证据 |
-| `review` | 只做验收（G5） | 看看这段 diff |
-| `investigation` | 只做脑暴（G1） | 调查个问题、出结论 |
-
-`size: light | standard | full` 决定每步花多少 —— `light` 不派评审子代理，适合小改动。
-
-**门是给你点的**。每一阶段：
-
-1. 产物落盘 → 生成一份**要点**，我们当面对一遍（你可以提修改）
-2. 你觉得没问题 → 确认 → 打开这道门
-3. 不满意 → 退回，旧版本进历史不删
-
-*讨论不算批准，你说过「可以」才算。*
 
 ---
 
 ## 模型路由
 
-**脑**设计 · **手**执行 · **评审**把关 —— 三条路由在插件设置里配，工作台面板也能改。
+两条路由，在插件设置或右抽屉「Smart 模型路由」里配：
 
 ```
-brain:   <provider>/<strong-model>@high    # 决策 / 产物
-hand:    <provider>/<fast-model>@max       # 执行
-review:  <provider>/<strong-model>@high    # 评审
-lite:    <provider>/<fast-model>@high      # 探索 / 取证 / 并行调查
+hand:    <provider>/<model>[@effort]   # 执行类派发（默认）
+review:  <provider>/<model>[@effort]   # 独立评审
 ```
 
-三条规则：
+三层 + 一个硬底（`lib/dispatch.mjs`）：
 
-- **评审不许回落**到执行者的模型 —— 自己审自己等于没审
-- **同一处反复返工**时，评审自动升到该模型的最高推理档（并且告诉你升了）
-- 便宜模型在多步工作上常花 2–3 倍轮次，**总成本反而更高** —— 纯机械的活才用 `lite`
+```
+preset（行配置 handRoute / reviewRoute，压过面板）
+  → session（镜像 ~/.dsh-fly/smart-routes.json 的 sessions[<id>]）
+    → default（镜像 default，兼容顶层 legacy hand）
+      → 都没有 ⇒ 调用时大声报错并指路
+```
+
+两条规则：
+
+- **评审会回落，但回落实话实说**：没配 review 时 `role: 'review'` 复用 hand，
+  回执 `source` 是 `*-fallback` —— 那意味着执行者在审自己，**要告诉用户**。
+- **每次调用现读**：面板保存后下一次派发生效，不需要重启。
+
+---
+
+## 派发子代理
+
+```js
+smart_dispatch({ role: 'hand',   prompt: '<自包含的任务说明>' })
+smart_dispatch({ role: 'review', prompt: '审 <路径>：结论分阻塞 / 非阻塞 / 需要裁决' })
+```
+
+回执是 `{ text, route: { provider, model }, source }` —— **`route` 是这一次实际用的模型**，
+不是"应该配了哪个"。
+
+---
+
+## 文档契约
+
+```js
+smart_check_doc({ path: '/abs/path/docs/plans/2026-10-29-x.md' })
+smart_check_doc({ path: '/abs/path/docs/plans/2026-10-29-x-acceptance.md' })
+```
+
+| 文件 | 要求 |
+| --- | --- |
+| 计划 `*.md` | 每个任务块带 `**Interfaces:**`（Consumes / Produces）+ `## Global Constraints` + `## Review Focus` |
+| 验收 `*-acceptance.md` | 含「验收」的 `##` 节、至少一条 `- [ ]`、每条同时带「检查」与「预期」、不留「需要你裁决」 |
+
+判据刻意做得钝（标题 + 关键词）：聪明的解析漏掉一节，比偶尔多报更糟。
+缺什么就逐条列出来，一次报全。
 
 ---
 
 ## 工作台面板
 
-`fly.smart` 右抽屉：阶段板、产物查看器、待裁决 / 自裁决、返工额度、
-每轮评审用的哪个模型、证据文件、花了多少次子代理调用。
+`fly.smart` 右抽屉：模型路由卡（hand / review 可写、brain 只读、模型目录下拉）
++ 「当前生效」一栏告诉你实际会用哪一层。任务树面板随工作流一起删除。
 
 ---
 
@@ -102,9 +112,17 @@ lite:    <provider>/<fast-model>@high      # 探索 / 取证 / 并行调查
 dsh plugin add @dsh-fly/dsh-plugin-fly-smart
 ```
 
-配好三条路由即可开用。没配会**大声报错并指路**，不会静默跑偏。
+配好两条路由即可开用。没配会**大声报错并指路**，不会静默跑偏。
 
-需要完整交付能力时，把它挂进 agent preset（见 [`docs/internals.md`](docs/internals.md)）。
+---
+
+## 已知限制
+
+- **从 0.2.x 升级**：14 个 `smart_*` 工具与 `/smart` 命令已删除。旧会话里调它们会得到
+  unknown tool —— 那是预期行为，不是故障。旧任务目录仍在磁盘上，可按普通 markdown 阅读。
+- **子代理不能派发子代理**：`smart_dispatch` 在子会话里直接拒绝（宿主已不再给子代理收窄工具面，
+  这层守卫由插件自己守）。
+- **`smart_check_doc` 只做机械判据**：契约齐不齐它能判，"这段计划写得对不对"仍需人读。
 
 ---
 
@@ -112,9 +130,9 @@ dsh plugin add @dsh-fly/dsh-plugin-fly-smart
 
 | 看什么 | 去哪 |
 | --- | --- |
-| 工作流细节、门与契约、两种裁决、工具面 | [`docs/internals.md`](docs/internals.md) |
+| 内部结构、路由解析、派发契约 | [`docs/internals.md`](docs/internals.md) |
 | superpowers 移植清单与许可全文 | [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) |
-| Public 试运行手册 | [`docs/public-trial.md`](docs/public-trial.md) |
+| 本次瘦身的计划与验收（新产物约定的实例） | [`docs/plans/2026-10-29-slim-fly-smart.md`](docs/plans/2026-10-29-slim-fly-smart.md) |
 
 ## 许可
 

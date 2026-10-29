@@ -50,7 +50,7 @@ import { randomBytes } from 'node:crypto'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 
-/** The mirror file name. The agent half pins the same constant (`state.mjs`). */
+/** The mirror file name. The agent half pins the same constant (`lib/dispatch.mjs`). */
 export const ROUTE_MIRROR_FILE = 'smart-routes.json'
 
 /** Absolute-path override for the mirror **file** (tests, headless). */
@@ -96,7 +96,7 @@ export function mirrorLockPath(mirrorPath = resolveMirrorPath()) {
 
 /**
  * Parse `"provider/model[@effort]"` exactly the way the agent half does
- * (`state.mjs`'s `parseRouteValue`); a cross-package test pins the two together.
+ * (`lib/dispatch.mjs`'s `parseRouteValue`); a cross-package test pins the two together.
  *
  * @param value - candidate string.
  * @returns `{ provider, model, reasoningEffort? }`, or undefined.
