@@ -20,7 +20,7 @@ description: Use when starting any task in this profile — establishes how to f
 **任何回应或动作之前先调用相关或被要求的技能** —— 包括反问、探索代码库、查看文件。
 如果调用后发现不适用，你不必照它做。
 
-**进入计划之前**：先想清方案 —— 摆一张决策表（问题 / 候选 / 当前倾向 / 未决问题），选完再写计划。
+**进入计划之前**：如果还没做过脑暴，先调用 `smart-brainstorm`（决策表：问题 / 候选 / 当前倾向 / 未决问题）。
 
 然后声明「Using [技能名] to [目的]」，并逐条照技能执行。技能里有清单的，每条建一个 todo。
 
@@ -28,12 +28,12 @@ description: Use when starting any task in this profile — establishes how to f
 
 多个技能都适用时，**流程技能在前** —— 它们定路子，实现类技能再去执行。
 
-- **「建个东西」**（加功能、做组件、改行为）→ 先想清方案，再写计划（`smart-plan`）
+- **「建个东西」**（加功能、做组件、改行为）→ 先 `smart-brainstorm`，设计取舍留档 `smart-adr`，再写计划（`smart-plan`）
 - **「修个 bug」/ 行为不对** → 先 `smart-debug`，修完用 `smart-verify-claim` 收尾
 - **要写多步计划** → `smart-plan`
 - **写任何生产代码之前** → `smart-tdd`
 - **即将声称完成 / 测试通过** → `smart-verify-claim`
-- **要审别人的代码或产物** → 直接审：结论分阻塞 / 非阻塞 / 需要裁决，每条带复现
+- **要审别人的代码或产物** → `smart-review`（阻塞 / 非阻塞 / 需要裁决三档，每条带复现）
 - **收到评审意见** → `smart-review-receive`
 - **开始特性工作** → `smart-worktree`
 - **2+ 个互不相干的任务** → `smart-parallel`
@@ -49,7 +49,9 @@ description: Use when starting any task in this profile — establishes how to f
 | 排查一个 bug、定位一个失败 | `smart-debug`（不写文件） |
 | 写一小段代码 | `smart-tdd`（不写文件） |
 | 写个技能 | `smart-write-skill`（不写文件） |
-| 看看这个 diff / 这段改动 | 直接审：结论分阻塞 / 非阻塞 / 需要裁决，每条带复现 |
+| 看看这个 diff / 这段改动 | `smart-review`（不写文件，出评审报告） |
+| 想清方案、摆出候选再选 | `smart-brainstorm`（不写文件，出决策表） |
+| 设计取舍要长期留档 | `smart-adr`（ADR-lite 五段，写进 docs/adr/ 或计划的约束节） |
 | 多步实现、别人（或另一个模型）要照着干 | `smart-plan` → 写 `docs/plans/<日期>-<名字>.md` |
 | 要交付、要人验收 | 再写 `<同名>-acceptance.md`，收尾用 `smart-verify-claim` |
 | 会话/路由出了问题 | `smart-diagnose`（不写文件） |
